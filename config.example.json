@@ -1,0 +1,39 @@
+{
+  "_comment": "NShare Configuration File",
+  "_description": "All settings with descriptions and examples",
+  
+  "shared_text": "Welcome to NShare!",
+  "_shared_text_info": "Default text shown in the shared text editor",
+  
+  "admin_password": "admin123",
+  "_admin_password_info": "Password for admin access. CHANGE THIS IN PRODUCTION!",
+  
+  "port": 80,
+  "_port_info": "Server port. Use 3000 for development, 80/443 for production",
+  
+  "upload_directory": "./uploads",
+  "_upload_directory_info": "Directory where uploaded files are stored. Can be absolute or relative path",
+  
+  "max_file_size": "500MB",
+  "_max_file_size_info": "Maximum file upload size. Supports: 1KB, 100MB, 5GB, etc.",
+  
+  "temp_upload_directory": "temp_uploads",
+  "_temp_upload_directory_info": "Temporary directory for file uploads during processing",
+  
+  "request_size_limit": "500mb",
+  "_request_size_limit_info": "Maximum request body size (lowercase units: mb, gb, kb)",
+  
+  "cors_origins": "same-origin",
+  "_cors_origins_info": "CORS policy - See examples below",
+  "_cors_examples": {
+    "_production_secure": "same-origin",
+    "_development_open": "*", 
+    "_specific_domain": "https://myapp.com",
+    "_multiple_domains": ["https://app1.com", "https://app2.com", "https://admin.mysite.org"],
+    "_localhost_dev": ["http://localhost:3000", "http://127.0.0.1:8080"],
+    "_mixed_environments": ["https://prod.com", "http://localhost:3000"]
+  },
+  
+  "enable_api_restrictions": true,
+  "_enable_api_restrictions_info": "Block external API calls. true = secure (web interface only), false = open API"
+}

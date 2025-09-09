@@ -1,0 +1,17 @@
+{
+  "_comment": "Enterprise Configuration - Multiple Authorized Domains",
+  "shared_text": "Corporate File Sharing System",
+  "admin_password": "STRONG_ENTERPRISE_PASSWORD",
+  "port": 80,
+  "upload_directory": "/corporate/files/uploads",
+  "max_file_size": "2GB",
+  "temp_upload_directory": "/corporate/temp/nshare",
+  "request_size_limit": "2gb",
+  "cors_origins": [
+    "https://intranet.company.com",
+    "https://portal.company.com", 
+    "https://admin.company.com",
+    "https://mobile-app.company.com"
+  ],
+  "enable_api_restrictions": true
+}
