@@ -862,6 +862,69 @@ app.get('/shared_text', apiProtection, (req, res) => {
     res.json(sharedTextContent);
 });
 
+app.get('/api/files', async (req, res) => {
+    const currentPath = req.query.path || '';
+    const limit = parseInt(req.query.limit) || 10;
+
+    // Input validation
+    if (!isValidPath(currentPath)) {
+        return res.status(400).json({ error: 'Invalid path' });
+    }
+
+    // Security check
+    const fullPath = safeJoin(BASE_DIR, currentPath);
+    if (!isSafePath(fullPath, BASE_DIR)) {
+        return res.status(400).json({ error: 'Invalid path' });
+    }
+
+    try {
+        await fs.promises.access(fullPath, fs.constants.F_OK);
+    } catch {
+        return res.status(404).json({ error: 'Path not found' });
+    }
+
+    // Get directory contents
+    let items = [];
+    const stats = await fs.promises.stat(fullPath);
+    if (stats.isDirectory()) {
+        try {
+            const files = await fs.promises.readdir(fullPath);
+            for (const item of files) {
+                const itemPath = path.join(fullPath, item);
+                const stats = await fs.promises.stat(itemPath);
+                const isDir = stats.isDirectory();
+                const size = getFileSize(itemPath);
+                const modified = stats.mtime;
+
+                items.push({
+                    name: item,
+                    is_dir: isDir,
+                    size: size,
+                    size_formatted: formatFileSize(size),
+                    modified: modified.toISOString().slice(0, 19).replace('T', ' '),
+                    icon: isDir ? 'fas fa-folder' : getFileIcon(item),
+                    path: path.join(currentPath, item).replace(/\\/g, '/')
+                });
+            }
+        } catch (e) {
+            return res.status(403).json({ error: 'Permission denied' });
+        }
+    }
+
+    // Sort by modified date (newest first)
+    items.sort((a, b) => {
+        if (a.is_dir !== b.is_dir) {
+            return a.is_dir ? -1 : 1;
+        }
+        return new Date(b.modified) - new Date(a.modified);
+    });
+
+    // Limit results
+    items = items.slice(0, limit);
+
+    res.json({ success: true, files: items, base_url: `http://${req.headers.host}` });
+});
+
 app.post('/shared_text', (req, res) => {
     const content = req.body.content || '';
     

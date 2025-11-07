@@ -6,6 +6,6 @@
   "max_file_size": "500MB",
   "temp_upload_directory": "temp_uploads",
   "request_size_limit": "500mb",
-  "cors_origins": "same-origin",
-  "enable_api_restrictions": true
+  "cors_origins": "*",
+  "enable_api_restrictions": false
 }
