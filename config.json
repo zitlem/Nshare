@@ -1,0 +1,11 @@
+{
+  "shared_text": "",
+  "admin_password": "admin123",
+  "port": 80,
+  "upload_directory": "./uploads",
+  "max_file_size": "8GB",
+  "temp_upload_directory": "temp_uploads",
+  "request_size_limit": "5gb",
+  "cors_origins": "*",
+  "enable_api_restrictions": false
+}
