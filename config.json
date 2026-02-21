@@ -2,7 +2,7 @@
   "shared_text": "",
   "admin_password": "admin123",
   "port": 80,
-  "upload_directory": "./uploads",
+  "upload_directory": "./BSHARED",
   "max_file_size": "8GB",
   "temp_upload_directory": "temp_uploads",
   "request_size_limit": "5gb",

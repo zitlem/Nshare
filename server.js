@@ -182,6 +182,28 @@ if (!fs.existsSync(TEMP_DIR)) {
     fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
 
+// Clean up stale temp files (older than 1 hour)
+function cleanTempUploads() {
+    try {
+        const files = fs.readdirSync(TEMP_DIR);
+        const now = Date.now();
+        const maxAge = 60 * 60 * 1000; // 1 hour
+        for (const file of files) {
+            const filePath = path.join(TEMP_DIR, file);
+            try {
+                const stat = fs.statSync(filePath);
+                if (stat.isFile() && (now - stat.mtimeMs) > maxAge) {
+                    fs.unlinkSync(filePath);
+                }
+            } catch (e) { /* ignore individual file errors */ }
+        }
+    } catch (e) { /* ignore if temp dir is inaccessible */ }
+}
+
+// Clean on startup and every 30 minutes
+cleanTempUploads();
+setInterval(cleanTempUploads, 30 * 60 * 1000);
+
 // Helper function to convert file size strings to bytes
 function parseFileSize(sizeStr) {
     const units = {
@@ -321,6 +343,14 @@ function getFileIcon(filename) {
     return iconMap[ext] || 'fas fa-file';
 }
 
+function isHidden(filename, stats) {
+    // Linux style: files starting with '.'
+    if (filename.startsWith('.')) return true;
+    // Windows style: check hidden attribute (0x2)
+    if (process.platform === 'win32' && stats && stats.attributes && (stats.attributes & 0x2)) return true;
+    return false;
+}
+
 function isAdmin(req) {
     return req.session && req.session.admin === true;
 }
@@ -429,9 +459,10 @@ app.get('/', async (req, res) => {
                 if (searchQuery && !item.toLowerCase().includes(searchQuery.toLowerCase())) {
                     continue;
                 }
-                
+
                 const itemPath = path.join(fullPath, item);
                 const stats = await fs.promises.stat(itemPath);
+                if (isHidden(item, stats)) continue;
                 const isDir = stats.isDirectory();
                 const size = getFileSize(itemPath);
                 const modified = stats.mtime;
@@ -543,14 +574,23 @@ app.get('/logout', (req, res) => {
 app.post('/upload', upload.array('files'), (req, res) => {
     const currentPath = req.body.path || '';
     const files = req.files || [];
-    
+
+    // Helper to clean up temp files from this request
+    function cleanupTempFiles() {
+        for (const f of files) {
+            try { fs.unlinkSync(f.path); } catch (e) { /* already moved or deleted */ }
+        }
+    }
+
     // Security check
     const uploadDir = safeJoin(BASE_DIR, currentPath);
     if (!isSafePath(uploadDir, BASE_DIR)) {
+        cleanupTempFiles();
         return res.status(400).json({ error: 'Invalid path' });
     }
-    
+
     if (!fs.existsSync(uploadDir)) {
+        cleanupTempFiles();
         return res.status(400).json({ error: 'Directory does not exist' });
     }
     
@@ -587,6 +627,7 @@ app.post('/upload', upload.array('files'), (req, res) => {
             }
             uploadedFiles.push(filename);
         } catch (e) {
+            cleanupTempFiles();
             return res.status(500).json({ error: `Failed to save ${file.originalname}: ${e.message}` });
         }
     }
@@ -874,7 +915,7 @@ app.get('/shared_text', apiProtection, (req, res) => {
 
 app.get('/api/files', async (req, res) => {
     const currentPath = req.query.path || '';
-    const limit = parseInt(req.query.limit) || 10;
+    const limit = req.query.limit ? parseInt(req.query.limit) : 0;
 
     // Input validation
     if (!isValidPath(currentPath)) {
@@ -902,6 +943,7 @@ app.get('/api/files', async (req, res) => {
             for (const item of files) {
                 const itemPath = path.join(fullPath, item);
                 const stats = await fs.promises.stat(itemPath);
+                if (isHidden(item, stats)) continue;
                 const isDir = stats.isDirectory();
                 const size = getFileSize(itemPath);
                 const modified = stats.mtime;
@@ -930,7 +972,9 @@ app.get('/api/files', async (req, res) => {
     });
 
     // Limit results
-    items = items.slice(0, limit);
+    if (limit > 0) {
+        items = items.slice(0, limit);
+    }
 
     res.json({ success: true, files: items, base_url: `http://${req.headers.host}` });
 });
@@ -965,6 +1009,17 @@ io.on('connection', (socket) => {
         socket.leave('file_browser');
         socket.leave('shared_text');
     });
+});
+
+// Watch filesystem for external changes (SCP, rsync, cp, etc.)
+let fsWatchDebounce = null;
+fs.watch(BASE_DIR, { recursive: true }, (eventType, filename) => {
+    clearTimeout(fsWatchDebounce);
+    fsWatchDebounce = setTimeout(() => {
+        const dir = filename ? path.dirname(filename).replace(/\\/g, '/') : '';
+        const relativePath = dir === '.' ? '' : dir;
+        io.to('file_browser').emit('file_updated', { path: relativePath });
+    }, 500);
 });
 
 // Start server

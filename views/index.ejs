@@ -712,11 +712,26 @@
             background: rgba(73, 80, 87, 0.7);
         }
         
+        #alertContainer {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            max-width: 400px;
+        }
+
         .alert {
             padding: 1rem;
             border-radius: 0.375rem;
-            margin-bottom: 1rem;
             border: 1px solid transparent;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+            transition: opacity 0.3s, transform 0.3s;
         }
         
         .alert-success {
@@ -1253,15 +1268,15 @@
 
     <!-- Preview Modal -->
     <div class="modal" id="previewModal">
-        <div class="modal-content" style="width: 80vw; height: 80vh;">
-            <div class="modal-header">
+        <div class="modal-content" style="width: 80vw; height: 80vh; display: flex; flex-direction: column; overflow: hidden;">
+            <div class="modal-header" style="flex-shrink: 0;">
                 <div class="modal-title" id="previewTitle">File Preview</div>
                 <button class="close-btn" onclick="closeModal('previewModal')">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            
-            <div id="previewContent" style="height: calc(100% - 4rem); overflow: auto;">
+
+            <div id="previewContent" style="flex: 1 1 0; min-height: 0; overflow: auto;">
                 <div style="text-align: center; padding: 2rem;">
                     <div class="loading-spinner"></div>
                     <p>Loading preview...</p>
@@ -1274,6 +1289,7 @@
         // Global variables
         let socket;
         let currentPath = '<%= current_path %>';
+        const isAdmin = <%= is_admin ? 'true' : 'false' %>;
         let contextMenuItem = null;
         let downloadQueue = [];
         let sharedTextTimeout = null;
@@ -1288,7 +1304,7 @@
             
             socket.on('file_updated', function(data) {
                 if (data.path === currentPath) {
-                    location.reload();
+                    refreshFileList();
                 }
             });
             
@@ -1338,6 +1354,91 @@
             setTheme(newTheme);
         }
         
+        // Refresh file list in-place via API
+        function refreshFileList() {
+            fetch(`/api/files?path=${encodeURIComponent(currentPath)}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) return;
+                    const items = data.files;
+
+                    // Sort client-side to match current sort state
+                    const sortSelect = document.getElementById('sortSelect');
+                    const sortOrderBtn = document.getElementById('sortOrderBtn');
+                    const sortBy = sortSelect ? sortSelect.value : 'name';
+                    const order = sortOrderBtn ? sortOrderBtn.dataset.order : 'asc';
+                    const reverse = order === 'desc';
+
+                    items.sort((a, b) => {
+                        if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+                        let cmp = 0;
+                        if (sortBy === 'size') cmp = a.size - b.size;
+                        else if (sortBy === 'modified') cmp = new Date(a.modified) - new Date(b.modified);
+                        else cmp = a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+                        return reverse ? -cmp : cmp;
+                    });
+
+                    const fileList = document.querySelector('.file-list');
+                    if (!fileList) return;
+
+                    if (items.length === 0) {
+                        fileList.innerHTML = `
+                            <div style="padding: 3rem; text-align: center; color: var(--text-secondary);">
+                                <i class="fas fa-folder-open" style="font-size: 3rem; margin-bottom: 1rem;"></i>
+                                <p>This directory is empty</p>
+                            </div>`;
+                        return;
+                    }
+
+                    fileList.innerHTML = items.map(item => {
+                        const ePath = escapeHtml(item.path);
+                        const eName = escapeHtml(item.name);
+                        const jsPath = item.path.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                        const jsName = item.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                        return `
+                        <div class="file-item" data-path="${ePath}" data-is-dir="${item.is_dir}">
+                            <div class="file-icon ${item.is_dir ? 'folder' : 'file'}">
+                                <i class="${escapeHtml(item.icon)}"></i>
+                            </div>
+                            <div class="file-info">
+                                <div class="file-name">${eName}</div>
+                            </div>
+                            <div class="file-size">${escapeHtml(item.size_formatted)}</div>
+                            <div class="file-date">${escapeHtml(item.modified)}</div>
+                            <div class="file-actions">
+                                ${item.is_dir ? `
+                                    <button class="action-btn" title="Download as ZIP" onclick="downloadFolder('${jsPath}')">
+                                        <i class="fas fa-download"></i>
+                                    </button>
+                                ` : `
+                                    <button class="action-btn" title="Preview" onclick="previewFile('${jsPath}')">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                    <button class="action-btn" title="Download" onclick="downloadFile('${jsPath}')">
+                                        <i class="fas fa-download"></i>
+                                    </button>
+                                `}
+                                ${isAdmin ? `
+                                    <button class="action-btn" title="Rename" onclick="renameItem('${jsPath}', '${jsName}')">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <button class="action-btn" title="Delete" onclick="deleteItem('${jsPath}')">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                ` : ''}
+                            </div>
+                        </div>`;
+                    }).join('');
+
+                    // Re-attach click/context handlers for new file items
+                    document.querySelectorAll('.file-item').forEach(item => {
+                        item.addEventListener('click', handleFileClick);
+                        item.addEventListener('contextmenu', handleContextMenu);
+                    });
+                })
+                .catch(err => console.error('Failed to refresh file list:', err));
+        }
+
         // File handling
         function initializeFileHandling() {
             const fileInput = document.getElementById('fileInput');
@@ -1583,14 +1684,14 @@
             } else if (imageExts.includes(ext)) {
                 // Enhanced Image Preview with zoom
                 content.innerHTML = `
-                    <div style="text-align: center; position: relative;">
-                        <img id="previewImage" src="/download?path=${encodeURIComponent(path)}" 
-                             style="max-width: 100%; max-height: calc(100% - 4rem); border-radius: 0.375rem; cursor: zoom-in; transition: transform 0.3s;" 
+                    <div style="height: 100%; display: flex; flex-direction: column; align-items: center;">
+                        <img id="previewImage" src="/download?path=${encodeURIComponent(path)}"
+                             style="max-width: 100%; flex: 1 1 0; min-height: 0; object-fit: contain; border-radius: 0.375rem; cursor: zoom-in; transition: transform 0.3s;"
                              alt="${fileName}"
                              onclick="toggleImageZoom(this)"
                              draggable="false"
                              ondragstart="return false;">
-                        <div style="margin-top: 1rem; font-size: 0.875rem; color: var(--text-secondary);">
+                        <div style="flex-shrink: 0; margin-top: 0.5rem; font-size: 0.875rem; color: var(--text-secondary);">
                             Click image to zoom • Right-click to download
                         </div>
                     </div>
@@ -1598,12 +1699,12 @@
             } else if (videoExts.includes(ext)) {
                 // Enhanced Video Preview
                 content.innerHTML = `
-                    <div style="text-align: center;">
-                        <video controls style="max-width: 100%; max-height: calc(100% - 4rem); border-radius: 0.375rem;" preload="metadata">
-                            <source src="/download?path=${encodeURIComponent(path)}" type="video/${ext}">
+                    <div style="height: 100%; display: flex; flex-direction: column; align-items: center;">
+                        <video controls style="max-width: 100%; flex: 1 1 0; min-height: 0; object-fit: contain; border-radius: 0.375rem;" preload="metadata">
+                            <source src="/download?path=${encodeURIComponent(path)}">
                             Your browser does not support the video tag.
                         </video>
-                        <div style="margin-top: 1rem; font-size: 0.875rem; color: var(--text-secondary);">
+                        <div style="flex-shrink: 0; margin-top: 0.5rem; font-size: 0.875rem; color: var(--text-secondary);">
                             ${fileName} • Video Preview
                         </div>
                     </div>
@@ -1617,7 +1718,7 @@
                         </div>
                         <h3 style="margin-bottom: 1rem; word-break: break-word;">${fileName}</h3>
                         <audio controls style="width: 100%; max-width: 400px; margin-top: 1rem;" preload="metadata">
-                            <source src="/download?path=${encodeURIComponent(path)}" type="audio/${ext}">
+                            <source src="/download?path=${encodeURIComponent(path)}">
                             Your browser does not support the audio tag.
                         </audio>
                         <div style="margin-top: 1rem; font-size: 0.875rem; color: var(--text-secondary);">
@@ -1638,11 +1739,11 @@
                     .then(data => {
                         if (data.success) {
                             content.innerHTML = `
-                                <div style="text-align: left;">
-                                    <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 0.375rem; overflow: auto; max-height: calc(100% - 4rem); font-family: 'Courier New', monospace; font-size: 0.875rem; line-height: 1.5; white-space: pre-wrap; border: 1px solid var(--border-color);">
+                                <div style="height: 100%; display: flex; flex-direction: column;">
+                                    <div style="background: var(--bg-secondary); padding: 1rem; border-radius: 0.375rem; overflow: auto; flex: 1 1 0; min-height: 0; font-family: 'Courier New', monospace; font-size: 0.875rem; line-height: 1.5; white-space: pre-wrap; border: 1px solid var(--border-color);">
                                         ${escapeHtml(data.content)}
                                     </div>
-                                    <div style="margin-top: 1rem; text-align: center; font-size: 0.875rem; color: var(--text-secondary);">
+                                    <div style="flex-shrink: 0; margin-top: 0.5rem; text-align: center; font-size: 0.875rem; color: var(--text-secondary);">
                                         ${fileName} • Plain Text Preview
                                     </div>
                                 </div>
@@ -1668,19 +1769,19 @@
         // PDF Preview Function
         function previewPDF(path, content, fileName) {
             content.innerHTML = `
-                <div style="text-align: center;">
-                    <div style="margin-bottom: 1rem;">
+                <div style="height: 100%; display: flex; flex-direction: column; align-items: center;">
+                    <div style="flex-shrink: 0; margin-bottom: 0.5rem;">
                         <button class="btn btn-secondary" onclick="downloadFile('${path}')">
                             <i class="fas fa-download"></i> Download PDF
                         </button>
                     </div>
-                    <div id="pdfContainer" style="border: 1px solid var(--border-color); border-radius: 0.375rem; overflow: auto; max-height: calc(100% - 6rem); background: #f5f5f5;">
+                    <div id="pdfContainer" style="flex: 1 1 0; min-height: 0; width: 100%; border: 1px solid var(--border-color); border-radius: 0.375rem; overflow: auto; background: #f5f5f5;">
                         <div style="padding: 2rem;">
                             <div class="loading-spinner"></div>
                             <p>Loading PDF...</p>
                         </div>
                     </div>
-                    <div style="margin-top: 1rem; font-size: 0.875rem; color: var(--text-secondary);">
+                    <div style="flex-shrink: 0; margin-top: 0.5rem; font-size: 0.875rem; color: var(--text-secondary);">
                         ${fileName} • PDF Preview
                     </div>
                 </div>
@@ -1756,15 +1857,15 @@
                         const codeId = 'code-' + Date.now();
                         
                         content.innerHTML = `
-                            <div style="text-align: left;">
-                                <div style="background: var(--bg-secondary); border-radius: 0.375rem; overflow: hidden; border: 1px solid var(--border-color);">
-                                    <div style="padding: 0.75rem 1rem; background: var(--bg-tertiary); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: between;">
+                            <div style="height: 100%; display: flex; flex-direction: column;">
+                                <div style="flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg-secondary); border-radius: 0.375rem; overflow: hidden; border: 1px solid var(--border-color);">
+                                    <div style="flex-shrink: 0; padding: 0.75rem 1rem; background: var(--bg-tertiary); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: between;">
                                         <span style="font-weight: 500; font-size: 0.875rem;">${fileName}</span>
                                         <span style="margin-left: auto; font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">${ext}</span>
                                     </div>
-                                    <pre><code id="${codeId}" class="language-${ext}" style="display: block; overflow: auto; max-height: calc(100% - 8rem); padding: 1rem; margin: 0; font-size: 0.875rem; line-height: 1.5;">${escapeHtml(codeContent)}</code></pre>
+                                    <pre style="flex: 1 1 0; min-height: 0; overflow: auto; margin: 0;"><code id="${codeId}" class="language-${ext}" style="display: block; padding: 1rem; margin: 0; font-size: 0.875rem; line-height: 1.5;">${escapeHtml(codeContent)}</code></pre>
                                 </div>
-                                <div style="margin-top: 1rem; text-align: center; font-size: 0.875rem; color: var(--text-secondary);">
+                                <div style="flex-shrink: 0; margin-top: 0.5rem; text-align: center; font-size: 0.875rem; color: var(--text-secondary);">
                                     Code Preview with Syntax Highlighting
                                 </div>
                             </div>
@@ -1803,8 +1904,8 @@
                         const markdownContent = data.content;
                         
                         content.innerHTML = `
-                            <div style="text-align: left;">
-                                <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem; justify-content: center;">
+                            <div style="height: 100%; display: flex; flex-direction: column;">
+                                <div style="flex-shrink: 0; display: flex; gap: 0.5rem; margin-bottom: 0.5rem; justify-content: center;">
                                     <button class="btn btn-secondary" id="mdRaw" onclick="toggleMarkdownView('raw')">
                                         <i class="fas fa-code"></i> Raw
                                     </button>
@@ -1812,17 +1913,17 @@
                                         <i class="fas fa-eye"></i> Rendered
                                     </button>
                                 </div>
-                                
-                                <div id="markdownRaw" style="display: none;">
-                                    <pre style="background: var(--bg-secondary); padding: 1rem; border-radius: 0.375rem; overflow: auto; max-height: calc(100% - 8rem); font-family: 'Courier New', monospace; font-size: 0.875rem; line-height: 1.5; white-space: pre-wrap; border: 1px solid var(--border-color);">${escapeHtml(markdownContent)}</pre>
+
+                                <div id="markdownRaw" style="display: none; flex: 1 1 0; min-height: 0; overflow: auto;">
+                                    <pre style="background: var(--bg-secondary); padding: 1rem; border-radius: 0.375rem; font-family: 'Courier New', monospace; font-size: 0.875rem; line-height: 1.5; white-space: pre-wrap; border: 1px solid var(--border-color);">${escapeHtml(markdownContent)}</pre>
                                 </div>
-                                
-                                <div id="markdownRendered" style="background: var(--bg-primary); padding: 1.5rem; border-radius: 0.375rem; border: 1px solid var(--border-color); max-height: calc(100% - 8rem); overflow: auto;">
+
+                                <div id="markdownRendered" style="flex: 1 1 0; min-height: 0; background: var(--bg-primary); padding: 1.5rem; border-radius: 0.375rem; border: 1px solid var(--border-color); overflow: auto;">
                                     <div class="loading-spinner" style="text-align: center;"></div>
                                     <p style="text-align: center;">Rendering markdown...</p>
                                 </div>
-                                
-                                <div style="margin-top: 1rem; text-align: center; font-size: 0.875rem; color: var(--text-secondary);">
+
+                                <div style="flex-shrink: 0; margin-top: 0.5rem; text-align: center; font-size: 0.875rem; color: var(--text-secondary);">
                                     ${fileName} • Markdown Preview
                                 </div>
                             </div>
