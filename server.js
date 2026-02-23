@@ -166,6 +166,14 @@ if (!fs.existsSync(CONFIG_FILE)) {
         config.enable_api_restrictions = true;
         needsUpdate = true;
     }
+    if (config.smb_url === undefined) {
+        config.smb_url = "";
+        needsUpdate = true;
+    }
+    if (config.smb_button_text === undefined) {
+        config.smb_button_text = "";
+        needsUpdate = true;
+    }
     if (needsUpdate) {
         saveConfig(config);
     }
@@ -532,7 +540,9 @@ app.get('/', async (req, res) => {
             }
             return `/${route}`;
         },
-        get_flashed_messages: () => []
+        get_flashed_messages: () => [],
+        smb_url: config.smb_url || '',
+        smb_button_text: config.smb_button_text || ''
     });
 });
 

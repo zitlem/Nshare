@@ -200,7 +200,7 @@
         
         .action-buttons {
             display: flex;
-            align-items: center;
+            align-items: stretch;
             gap: 0.25rem;
             flex-wrap: wrap;
         }
@@ -1056,6 +1056,12 @@
                         Upload
                     </button>
                     
+                    <% if (smb_url) { %>
+                    <a href="#" class="btn btn-info" onclick="openSmbShare(); return false;" style="flex-wrap:wrap; justify-content:center; text-align:center; line-height:1.2;">
+                        <span style="width:100%; display:flex; align-items:center; justify-content:center; gap:0.375rem;"><i class="fas fa-folder-open"></i> Open in File Browser</span>
+                        <% if (smb_button_text) { %><small style="width:100%; display:block;"><%= smb_button_text %></small><% } %>
+                    </a>
+                    <% } %>
                     <% if (is_admin) { %>
                         <button class="btn btn-success" id="createFolderBtn">
                             <i class="fas fa-folder-plus"></i>
@@ -1286,6 +1292,23 @@
     </div>
 
     <script>
+        function openSmbShare() {
+            const smbUrl = '<%= smb_url %>';
+            const isWindows = navigator.platform.indexOf('Win') > -1;
+            if (isWindows) {
+                const uncPath = smbUrl.replace(/^smb:\/\//, '\\\\').replace(/\//g, '\\');
+                const ta = document.createElement('textarea');
+                ta.value = uncPath;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                prompt('Path copied to clipboard! Press Win+R and paste to open:', uncPath);
+            } else {
+                window.open(smbUrl, '_blank');
+            }
+        }
+
         // Global variables
         let socket;
         let currentPath = '<%= current_path %>';

@@ -2,10 +2,12 @@
   "shared_text": "",
   "admin_password": "admin123",
   "port": 80,
-  "upload_directory": "./BSHARED",
+  "upload_directory": "./shared",
   "max_file_size": "8GB",
   "temp_upload_directory": "temp_uploads",
   "request_size_limit": "5gb",
   "cors_origins": "*",
-  "enable_api_restrictions": false
+  "enable_api_restrictions": false,
+  "smb_url": "smb://192.168.2.7/shared",
+  "smb_button_text": "SUNDAY/SCHOOL"
 }
