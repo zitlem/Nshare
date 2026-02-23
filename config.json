@@ -9,5 +9,5 @@
   "cors_origins": "*",
   "enable_api_restrictions": false,
   "smb_url": "smb://192.168.2.7/shared",
-  "smb_button_text": "SUNDAY/SCHOOL"
+  "smb_button_text": "Shared"
 }
