@@ -617,9 +617,10 @@ app.post('/upload', upload.array('files'), (req, res) => {
             try {
                 fs.renameSync(file.path, filePath);
             } catch (e) {
-                if (e.code === 'EXDEV') {
-                    // Cross-device move - copy then delete
-                    fs.copyFileSync(file.path, filePath);
+                if (e.code === 'EXDEV' || e.code === 'EPERM') {
+                    // copyFileSync uses copy_file_range which fails on some NFS mounts
+                    const data = fs.readFileSync(file.path);
+                    fs.writeFileSync(filePath, data);
                     fs.unlinkSync(file.path);
                 } else {
                     throw e;
@@ -1021,6 +1022,33 @@ fs.watch(BASE_DIR, { recursive: true }, (eventType, filename) => {
         io.to('file_browser').emit('file_updated', { path: relativePath });
     }, 500);
 });
+
+// Poll for NFS changes not detected by inotify
+let lastMtimes = new Map();
+function pollForChanges() {
+    try {
+        const dirs = [BASE_DIR];
+        const newMtimes = new Map();
+        while (dirs.length) {
+            const dir = dirs.pop();
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            const stat = fs.statSync(dir);
+            const rel = path.relative(BASE_DIR, dir).replace(/\\/g, '/');
+            newMtimes.set(dir, stat.mtimeMs);
+            if (lastMtimes.has(dir) && lastMtimes.get(dir) !== stat.mtimeMs) {
+                io.to('file_browser').emit('file_updated', { path: rel === '.' ? '' : rel });
+            }
+            for (const entry of entries) {
+                if (entry.isDirectory()) {
+                    dirs.push(path.join(dir, entry.name));
+                }
+            }
+        }
+        lastMtimes = newMtimes;
+    } catch (e) { /* ignore polling errors */ }
+}
+pollForChanges(); // initial snapshot
+setInterval(pollForChanges, 5000);
 
 // Start server
 server.listen(PORT, '0.0.0.0', () => {
