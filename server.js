@@ -17,6 +17,7 @@ const MemoryStore = require('memorystore')(session);
 const mime = require('mime-types');
 const crypto = require('crypto');
 const { promisify } = require('util');
+const Y = require('yjs');
 
 const app = express();
 const server = http.createServer(app);
@@ -124,6 +125,28 @@ function saveConfig(config) {
 // Load initial configuration
 let config = loadConfig();
 let sharedTextContent = { content: config.shared_text || "" };
+
+// Yjs collaborative document for shared text
+const ydoc = new Y.Doc();
+const ytext = ydoc.getText('shared_text');
+
+// Initialize Y.Text from persisted content
+const initialSharedText = config.shared_text || '';
+if (initialSharedText) {
+    ytext.insert(0, initialSharedText);
+}
+
+// Debounced persistence for Y.Text changes
+let persistYTextTimer = null;
+function persistYText() {
+    clearTimeout(persistYTextTimer);
+    persistYTextTimer = setTimeout(() => {
+        const content = ytext.toString();
+        sharedTextContent.content = content;
+        config.shared_text = content;
+        saveConfig(config);
+    }, 1000);
+}
 const PORT = process.env.PORT || config.port || 80;
 const BASE_DIR = path.resolve(config.upload_directory || "./uploads");
 
@@ -992,31 +1015,67 @@ app.get('/api/files', async (req, res) => {
 
 app.post('/shared_text', (req, res) => {
     const content = req.body.content || '';
-    
+
+    // Update the Yjs doc by replacing all Y.Text content
+    ydoc.transact(() => {
+        ytext.delete(0, ytext.length);
+        if (content) {
+            ytext.insert(0, content);
+        }
+    });
+
+    // Persist immediately for REST API calls
     sharedTextContent.content = content;
-    
-    // Save to config file for persistence
     config.shared_text = content;
     const success = saveConfig(config);
-    
+
     if (!success) {
         console.log("Failed to save shared text to config file");
     }
-    
-    // Emit update to all clients
+
+    // Broadcast Yjs update (full state) for Yjs-aware clients
+    const stateUpdate = Y.encodeStateAsUpdate(ydoc);
+    io.to('shared_text').emit('yjs-update', stateUpdate);
+
+    // Also broadcast legacy event for non-Yjs clients
     io.to('shared_text').emit('shared_text_updated', sharedTextContent);
-    
+
     res.json({ success: true });
 });
 
 // Socket.IO events
 io.on('connection', (socket) => {
-    // console.log('Client connected');
     socket.join('file_browser');
     socket.join('shared_text');
-    
+
+    // Yjs sync: client requests full document state
+    socket.on('yjs-sync-request', () => {
+        const stateUpdate = Y.encodeStateAsUpdate(ydoc);
+        socket.emit('yjs-sync-response', stateUpdate);
+    });
+
+    // Yjs sync: client sends incremental update
+    socket.on('yjs-update', (update) => {
+        try {
+            const uint8Update = new Uint8Array(update);
+            Y.applyUpdate(ydoc, uint8Update);
+
+            // Broadcast to all OTHER clients
+            socket.to('shared_text').emit('yjs-update', update);
+
+            // Persist text to config
+            persistYText();
+
+            // Also emit legacy event for non-Yjs clients
+            io.to('shared_text').emit('shared_text_updated', {
+                content: ytext.toString()
+            });
+        } catch (e) {
+            console.error('Failed to apply Yjs update:', e.message);
+        }
+    });
+
     socket.on('disconnect', () => {
-        // console.log('Client disconnected');
         socket.leave('file_browser');
         socket.leave('shared_text');
     });

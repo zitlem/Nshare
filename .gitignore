@@ -1,0 +1,6 @@
+.claude/
+node_modules/
+config.json
+shared/
+uploads/
+temp_uploads/

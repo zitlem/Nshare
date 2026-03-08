@@ -18,6 +18,8 @@
     
     <!-- Socket.IO -->
     <script src="/js/socket.io.min.js"></script>
+    <!-- Yjs CRDT for collaborative editing -->
+    <script src="/js/yjs.min.js"></script>
     
     <!-- Enhanced Preview Libraries -->
     <script src="/js/pdf.min.js"></script>
@@ -1332,6 +1334,7 @@
             });
             
             socket.on('shared_text_updated', function(data) {
+                if (window.yjsActive) return; // Yjs handles updates
                 const textarea = document.getElementById('sharedTextArea');
                 if (document.activeElement !== textarea) {
                     textarea.value = data.content;
@@ -2228,46 +2231,166 @@
             document.getElementById('downloadQueue').classList.remove('show');
         }
         
-        // Shared text area
+        // Compute minimal diff between two strings for Yjs operations
+        function computeDiff(oldStr, newStr) {
+            let prefixLen = 0;
+            while (prefixLen < oldStr.length && prefixLen < newStr.length
+                   && oldStr[prefixLen] === newStr[prefixLen]) {
+                prefixLen++;
+            }
+            let oldSuffixStart = oldStr.length;
+            let newSuffixStart = newStr.length;
+            while (oldSuffixStart > prefixLen && newSuffixStart > prefixLen
+                   && oldStr[oldSuffixStart - 1] === newStr[newSuffixStart - 1]) {
+                oldSuffixStart--;
+                newSuffixStart--;
+            }
+            const ops = [];
+            const deleteLen = oldSuffixStart - prefixLen;
+            const insertText = newStr.slice(prefixLen, newSuffixStart);
+            if (deleteLen > 0) {
+                ops.push({ type: 'delete', index: prefixLen, length: deleteLen });
+            }
+            if (insertText.length > 0) {
+                ops.push({ type: 'insert', index: prefixLen, text: insertText });
+            }
+            return ops;
+        }
+
+        // Update textarea value while preserving cursor position
+        function updateTextareaPreservingCursor(textarea, oldText, newText) {
+            const selStart = textarea.selectionStart;
+            const selEnd = textarea.selectionEnd;
+            let prefixLen = 0;
+            while (prefixLen < oldText.length && prefixLen < newText.length
+                   && oldText[prefixLen] === newText[prefixLen]) {
+                prefixLen++;
+            }
+            let oldSuffix = oldText.length;
+            let newSuffix = newText.length;
+            while (oldSuffix > prefixLen && newSuffix > prefixLen
+                   && oldText[oldSuffix - 1] === newText[newSuffix - 1]) {
+                oldSuffix--;
+                newSuffix--;
+            }
+            textarea.value = newText;
+            const deletedLen = oldSuffix - prefixLen;
+            const insertedLen = newSuffix - prefixLen;
+            const delta = insertedLen - deletedLen;
+            let newSelStart = selStart;
+            let newSelEnd = selEnd;
+            if (selStart > oldSuffix) {
+                newSelStart += delta;
+            } else if (selStart > prefixLen) {
+                newSelStart = prefixLen + insertedLen;
+            }
+            if (selEnd > oldSuffix) {
+                newSelEnd += delta;
+            } else if (selEnd > prefixLen) {
+                newSelEnd = prefixLen + insertedLen;
+            }
+            textarea.setSelectionRange(newSelStart, newSelEnd);
+        }
+
+        // Shared text area - Yjs collaborative editing
+        let sharedYDoc = null;
+        let sharedYText = null;
+        let sharedPrevValue = '';
+
         function initializeSharedText() {
+            window.yjsActive = true;
             const textarea = document.getElementById('sharedTextArea');
             const copyBtn = document.getElementById('copyTextBtn');
-            
-            // Load initial content
-            fetch('/shared_text')
-                .then(response => response.json())
-                .then(data => {
-                    textarea.value = data.content;
-                })
-                .catch(error => {
-                    console.error('Failed to load shared text:', error);
-                });
-            
-            // Handle text changes
-            textarea.addEventListener('input', () => {
-                clearTimeout(sharedTextTimeout);
-                sharedTextTimeout = setTimeout(() => {
-                    updateSharedText(textarea.value);
-                }, 500);
+            const Y = window.YjsBundle;
+
+            const ydoc = new Y.Doc();
+            const ytext = ydoc.getText('shared_text');
+            sharedYDoc = ydoc;
+            sharedYText = ytext;
+
+            let isRemoteUpdate = false;
+
+            // Request full Yjs state from server
+            socket.emit('yjs-sync-request');
+
+            socket.on('yjs-sync-response', (update) => {
+                isRemoteUpdate = true;
+                Y.applyUpdate(ydoc, new Uint8Array(update));
+                textarea.value = ytext.toString();
+                sharedPrevValue = textarea.value;
+                isRemoteUpdate = false;
             });
-            
-            // Handle copy button
+
+            // Receive incremental updates from other clients
+            socket.on('yjs-update', (update) => {
+                isRemoteUpdate = true;
+                const before = ytext.toString();
+                Y.applyUpdate(ydoc, new Uint8Array(update));
+                const after = ytext.toString();
+                if (before !== after) {
+                    updateTextareaPreservingCursor(textarea, before, after);
+                }
+                sharedPrevValue = ytext.toString();
+                isRemoteUpdate = false;
+            });
+
+            // Send local Yjs updates to server
+            ydoc.on('update', (update, origin) => {
+                if (!isRemoteUpdate) {
+                    socket.emit('yjs-update', update);
+                }
+            });
+
+            // On textarea input, compute diff and apply to Y.Text
+            textarea.addEventListener('input', () => {
+                if (isRemoteUpdate) return;
+                const newValue = textarea.value;
+                const ops = computeDiff(sharedPrevValue, newValue);
+                ydoc.transact(() => {
+                    for (let i = ops.length - 1; i >= 0; i--) {
+                        const op = ops[i];
+                        if (op.type === 'delete') {
+                            ytext.delete(op.index, op.length);
+                        } else if (op.type === 'insert') {
+                            ytext.insert(op.index, op.text);
+                        }
+                    }
+                });
+                sharedPrevValue = newValue;
+            });
+
+            // Copy button
             if (copyBtn) {
                 copyBtn.addEventListener('click', () => {
                     copyToClipboard(textarea.value);
                 });
             }
         }
-        
+
+        // Legacy updateSharedText for backward compat (used by formatText)
         function updateSharedText(content) {
+            if (sharedYDoc && sharedYText) {
+                // Use Yjs: diff and apply
+                const ops = computeDiff(sharedYText.toString(), content);
+                sharedYDoc.transact(() => {
+                    for (let i = ops.length - 1; i >= 0; i--) {
+                        const op = ops[i];
+                        if (op.type === 'delete') {
+                            sharedYText.delete(op.index, op.length);
+                        } else if (op.type === 'insert') {
+                            sharedYText.insert(op.index, op.text);
+                        }
+                    }
+                });
+                sharedPrevValue = content;
+                return;
+            }
+            // Fallback: legacy POST
             fetch('/shared_text', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ content })
-            })
-            .catch(error => {
+            }).catch(error => {
                 console.error('Failed to update shared text:', error);
             });
         }
