@@ -379,6 +379,8 @@ function isHidden(filename, stats) {
     if (filename.startsWith('.')) return true;
     // Windows style: check hidden attribute (0x2)
     if (process.platform === 'win32' && stats && stats.attributes && (stats.attributes & 0x2)) return true;
+    // Windows thumbnail cache
+    if (filename.toLowerCase() === 'thumbs.db') return true;
     return false;
 }
 
