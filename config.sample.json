@@ -1,0 +1,32 @@
+{
+  "shared_text": "",
+  "admin_password": "CHANGE_ME",
+  "port": 80,
+  "max_file_size": "8GB",
+  "temp_upload_directory": "temp_uploads",
+  "request_size_limit": "5gb",
+  "cors_origins": "*",
+  "enable_api_restrictions": false,
+  "tunnel_duration_hours": 4,
+  "profiles": [
+    {
+      "name": "shared",
+      "subnets": ["192.168.1.0/24"],
+      "upload_directory": "./data/shared",
+      "smb_url": "",
+      "smb_button_text": ""
+    },
+    {
+      "name": "school",
+      "subnets": ["192.168.2.0/24"],
+      "upload_directory": "./data/school",
+      "smb_url": "",
+      "smb_button_text": ""
+    },
+    {
+      "name": "management",
+      "subnets": ["10.0.0.0/24"],
+      "shares": ["shared", "school"]
+    }
+  ]
+}

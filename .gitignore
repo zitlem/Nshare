@@ -1,0 +1,29 @@
+# --- Sensitive / machine-specific config ---
+# Real config has internal IPs, subnets, SMB paths and the admin password.
+# Commit config.sample.json instead; copy it to config.json locally.
+config.json
+
+# --- Dependencies ---
+node_modules/
+
+# --- User data / runtime folders (never commit shared files) ---
+uploads/
+temp_uploads/
+data/
+BSHARED/
+BSCHOOL/
+BMANAGE/
+
+# --- Logs ---
+*.log
+npm-debug.log*
+
+# --- Local tooling / editor ---
+.claude/settings.local.json
+.vscode/
+.idea/
+
+# --- OS cruft ---
+.DS_Store
+Thumbs.db
+desktop.ini
