@@ -73,7 +73,7 @@ array:
 ```json
 {
   "port": 80,
-  "admin_password": "admin123",
+  "admin_password": "CHANGE_ME",
   "max_file_size": "8GB",
   "temp_upload_directory": "temp_uploads",
   "request_size_limit": "5gb",
@@ -83,21 +83,24 @@ array:
   "profiles": [
     {
       "name": "shared",
-      "subnets": ["192.168.2.0/24"],
-      "upload_directory": "./BSHARED",
-      "smb_url": "smb://192.168.2.7/BCOS_SHARED",
+      "subnets": ["192.168.1.0/24"],
+      "upload_directory": "./data/shared",
+      "smb_url": "smb://server.example/share-a",
       "smb_button_text": ""
     },
     {
       "name": "school",
-      "subnets": ["192.168.4.0/24"],
-      "upload_directory": "./BSCHOOL",
-      "smb_url": "smb://192.168.4.7/BCOS_SCHOOL",
-      "smb_button_text": "SUNDAY/SCHOOL"
+      "subnets": ["192.168.10.0/24"],
+      "upload_directory": "./data/school",
+      "smb_url": "smb://server.example/share-b",
+      "smb_button_text": "SHARE B"
     }
   ]
 }
 ```
+
+> Values above are placeholders — set your own subnets, folders, and SMB paths.
+> The same template ships as `config.sample.json`.
 
 **Per-profile fields:** `name` (unique id), `subnets` (list of IPv4 CIDRs that map to this
 profile), `upload_directory`, `smb_url`, `smb_button_text`.
@@ -120,7 +123,7 @@ Give a subnet access to **several** folders by defining a *switcher* profile —
 folder-picker dropdown in the toolbar and can view/upload to any of the listed shares:
 
 ```json
-{ "name": "management", "subnets": ["10.1.10.0/24"], "shares": ["shared", "school"] }
+{ "name": "management", "subnets": ["10.0.0.0/24"], "shares": ["shared", "school"] }
 ```
 
 - The selected folder is remembered in the session (default: the first entry in `shares`).
