@@ -21,6 +21,15 @@ print_info()    { echo -e "${GREEN}[INFO]${NC} $1"; }
 print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 print_error()   { echo -e "${RED}[ERROR]${NC} $1"; }
 
+# Return 0 if the argument looks like an IPv4 or IPv6 address (used to reject
+# junk like "(ens20):" that resolvectl can emit for interfaces with no DNS).
+is_ip() {
+  local x="$1"
+  [[ "$x" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && return 0   # IPv4
+  [[ "$x" == *:* && "$x" =~ ^[0-9a-fA-F:]+$ ]] && return 0   # IPv6
+  return 1
+}
+
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
   print_error "This script must be run as root (use sudo)"
@@ -67,13 +76,17 @@ while IFS= read -r NAME; do
   CUR_IP=$(ip -o -4 addr show dev "$NAME" 2>/dev/null | awk '{print $4}' | head -n1)
   [ -z "$CUR_IP" ] && CUR_IP="—"
 
-  # DNS (best-effort, based on network system)
+  # DNS (best-effort). Strip the "Global:" / "Link N (iface):" prefix so an
+  # interface with NO dns doesn't yield junk like "(ens20):", then validate.
   if [ "$NETWORK_SYSTEM" == "networkmanager" ]; then
-    DNS=$(nmcli device show "$NAME" 2>/dev/null | grep "IP4.DNS" | awk '{print $2}' | head -n 1)
+    DNS=$(nmcli device show "$NAME" 2>/dev/null | awk '/IP4.DNS/{print $2; exit}')
   else
-    DNS=$(resolvectl dns "$NAME" 2>/dev/null | awk '{print $NF}' | head -n1)
-    [ -z "$DNS" ] && DNS=$(grep nameserver /etc/resolv.conf 2>/dev/null | head -n1 | awk '{print $2}')
+    DNS=$(resolvectl dns "$NAME" 2>/dev/null \
+          | sed -E 's/^(Global|Link[[:space:]]+[0-9]+[[:space:]]+\([^)]*\)):[[:space:]]*//' \
+          | awk '{print $1; exit}')
+    [ -z "$DNS" ] && DNS=$(awk '/^nameserver/{print $2; exit}' /etc/resolv.conf 2>/dev/null)
   fi
+  is_ip "$DNS" || DNS=""
   [ -z "$DNS" ] && DNS="(none)"
 
   INTERFACE_LIST["$counter"]="$NAME"
@@ -151,6 +164,12 @@ if [[ "$STATIC_IP" != */* ]]; then
   STATIC_IP="$STATIC_IP/24"
 fi
 
+# Validate the address portion
+if ! is_ip "${STATIC_IP%/*}"; then
+  print_error "Invalid IP address: $STATIC_IP"
+  exit 1
+fi
+
 # Gateway is OPTIONAL — blank means no default route (correct for a secondary subnet NIC)
 echo
 print_info "Gateway is optional. Leave blank for a secondary interface (no default route)."
@@ -161,6 +180,10 @@ else
   read -p "Gateway [blank for none]: " STATIC_GATEWAY
 fi
 [ "$STATIC_GATEWAY" == "-" ] && STATIC_GATEWAY=""
+if [ -n "$STATIC_GATEWAY" ] && ! is_ip "$STATIC_GATEWAY"; then
+  print_warning "Gateway '$STATIC_GATEWAY' is not a valid IP — ignoring."
+  STATIC_GATEWAY=""
+fi
 
 # DNS is OPTIONAL
 if [ -n "$CURRENT_DNS" ]; then
@@ -170,6 +193,10 @@ else
   read -p "DNS [blank for none]: " STATIC_DNS
 fi
 [ "$STATIC_DNS" == "-" ] && STATIC_DNS=""
+if [ -n "$STATIC_DNS" ] && ! is_ip "$STATIC_DNS"; then
+  print_warning "DNS '$STATIC_DNS' is not a valid IP — ignoring."
+  STATIC_DNS=""
+fi
 
 echo
 print_info "Applying configuration:"
