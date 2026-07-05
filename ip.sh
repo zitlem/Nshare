@@ -11,188 +11,274 @@ detect_network_manager() {
   fi
 }
 
+# Color codes for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+print_info()    { echo -e "${GREEN}[INFO]${NC} $1"; }
+print_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
+print_error()   { echo -e "${RED}[ERROR]${NC} $1"; }
+
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then
+  print_error "This script must be run as root (use sudo)"
+  exit 1
+fi
+
 NETWORK_SYSTEM=$(detect_network_manager)
 
 if [ "$NETWORK_SYSTEM" == "unknown" ]; then
-  echo "Error: Could not detect network management system (NetworkManager or Netplan)."
+  print_error "Could not detect network management system (NetworkManager or Netplan)."
   exit 1
 fi
 
-echo "Detected network system: $NETWORK_SYSTEM"
+print_info "Detected network system: $NETWORK_SYSTEM"
 echo
 
-# List all network interfaces with their IP addresses using 'ip a'
-echo "Available network interfaces (Name, IP, MAC):"
+# List ALL non-loopback interfaces (including DOWN / unconfigured ones)
+echo "Available network interfaces:"
 
-# Get the list of interfaces, IP addresses using 'ip a', excluding 'lo' (loopback interface)
-INTERFACES=$(ip -o -4 addr show | awk '{print $2, $4}' | grep -v "lo")
+INTERFACES=$(ip -o link show | awk -F': ' '{print $2}' | grep -v '^lo$')
 
-# If no interfaces are found, exit
 if [ -z "$INTERFACES" ]; then
-  echo "No active network interfaces found. Exiting."
+  print_error "No network interfaces found. Exiting."
   exit 1
 fi
 
-# Display the interfaces to the user as a numbered list
 counter=1
 declare -A INTERFACE_LIST
-declare -A INTERFACE_MACS
+declare -A INTERFACE_STATE
+declare -A INTERFACE_IP
 declare -A INTERFACE_DNS
-while IFS=' ' read -r NAME IP; do
-  MAC_ADDRESS=$(ip link show "$NAME" | awk '/link/ {print $2}')
-  
-  # Get DNS based on network system
+
+while IFS= read -r NAME; do
+  [ -z "$NAME" ] && continue
+
+  # Operational state (UP / DOWN)
+  STATE=$(ip -o link show "$NAME" | grep -o 'state [A-Z]*' | awk '{print $2}')
+  [ -z "$STATE" ] && STATE="UNKNOWN"
+
+  MAC_ADDRESS=$(ip -o link show "$NAME" | awk '{for (i=1;i<=NF;i++) if ($i=="link/ether") print $(i+1)}')
+  [ -z "$MAC_ADDRESS" ] && MAC_ADDRESS="(none)"
+
+  # Current IPv4 (may be empty for a DOWN / unconfigured NIC)
+  CUR_IP=$(ip -o -4 addr show dev "$NAME" 2>/dev/null | awk '{print $4}' | head -n1)
+  [ -z "$CUR_IP" ] && CUR_IP="—"
+
+  # DNS (best-effort, based on network system)
   if [ "$NETWORK_SYSTEM" == "networkmanager" ]; then
-    INTERFACE_DNS[$counter]=$(nmcli device show "$NAME" | grep "IP4.DNS" | awk '{print $2}' | head -n 1)
+    DNS=$(nmcli device show "$NAME" 2>/dev/null | grep "IP4.DNS" | awk '{print $2}' | head -n 1)
   else
-    # For netplan/systemd-networkd, get DNS from resolv.conf or systemd-resolve
-    INTERFACE_DNS[$counter]=$(systemd-resolve --status "$NAME" 2>/dev/null | grep "DNS Servers" | awk '{print $3}' | head -n 1)
-    [ -z "${INTERFACE_DNS[$counter]}" ] && INTERFACE_DNS[$counter]=$(grep nameserver /etc/resolv.conf | head -n1 | awk '{print $2}')
+    DNS=$(resolvectl dns "$NAME" 2>/dev/null | awk '{print $NF}' | head -n1)
+    [ -z "$DNS" ] && DNS=$(grep nameserver /etc/resolv.conf 2>/dev/null | head -n1 | awk '{print $2}')
   fi
-  
-  INTERFACE_LIST["$counter"]="$NAME:$IP"
-  INTERFACE_MACS["$counter"]="$MAC_ADDRESS"
-  
-  # Show the output in a nice format
-  echo "$counter) $NAME - IP: $IP, MAC: $MAC_ADDRESS, DNS: ${INTERFACE_DNS[$counter]}"
+  [ -z "$DNS" ] && DNS="(none)"
+
+  INTERFACE_LIST["$counter"]="$NAME"
+  INTERFACE_STATE["$counter"]="$STATE"
+  INTERFACE_IP["$counter"]="$CUR_IP"
+  INTERFACE_DNS["$counter"]="$DNS"
+
+  echo "$counter) $NAME - $STATE - IP: $CUR_IP - MAC: $MAC_ADDRESS - DNS: $DNS"
   ((counter++))
 done <<< "$INTERFACES"
 
-# Add the "Exit" option as the next sequential number
 EXIT_OPTION=$counter
 echo "$EXIT_OPTION) Exit"
-
 echo
 
-# Prompt user to select an interface by number, or select the exit option
 echo "Enter the number of the interface you want to configure, or select the exit option:"
 read SELECTED_OPTION
 
-# If the user chooses to exit
 if [ "$SELECTED_OPTION" == "$EXIT_OPTION" ]; then
-  echo "Exiting script."
+  print_info "Exiting script."
   exit 0
 fi
 
-# Validate the selection (check if it's a valid interface number)
 if [[ ! "$SELECTED_OPTION" =~ ^[0-9]+$ ]] || [ -z "${INTERFACE_LIST[$SELECTED_OPTION]}" ]; then
-  echo "Invalid selection. Exiting."
+  print_error "Invalid selection. Exiting."
   exit 1
 fi
 
-# Extract the interface name, IP, MAC address, and DNS from the selected option
-SELECTED_INTERFACE=$(echo "${INTERFACE_LIST[$SELECTED_OPTION]}")
-INTERFACE_NAME=$(echo "$SELECTED_INTERFACE" | cut -d: -f1)
-CURRENT_IP=$(echo "$SELECTED_INTERFACE" | cut -d: -f2)
-MAC_ADDRESS=${INTERFACE_MACS[$SELECTED_OPTION]}
-CURRENT_DNS=${INTERFACE_DNS[$SELECTED_OPTION]}
+INTERFACE_NAME="${INTERFACE_LIST[$SELECTED_OPTION]}"
+SELECTED_STATE="${INTERFACE_STATE[$SELECTED_OPTION]}"
+CURRENT_IP="${INTERFACE_IP[$SELECTED_OPTION]}"
+CURRENT_DNS="${INTERFACE_DNS[$SELECTED_OPTION]}"
+[ "$CURRENT_IP" == "—" ] && CURRENT_IP=""
+[ "$CURRENT_DNS" == "(none)" ] && CURRENT_DNS=""
 
-echo "Selected interface: $INTERFACE_NAME"
-echo "Current IP Address: $CURRENT_IP"
-echo "MAC Address: $MAC_ADDRESS"
-echo "Current DNS: $CURRENT_DNS"
+echo
+print_info "Selected interface: $INTERFACE_NAME (state: $SELECTED_STATE)"
+
+# Bring the link up if it is down, so it becomes usable immediately
+if [ "$SELECTED_STATE" != "UP" ]; then
+  print_info "Interface is $SELECTED_STATE — bringing it up (ip link set $INTERFACE_NAME up)..."
+  ip link set "$INTERFACE_NAME" up
+  sleep 1
+  # Warn if there is no carrier (e.g. Proxmox vNIC not attached to a bridge/VLAN)
+  if ip -o link show "$INTERFACE_NAME" | grep -q "NO-CARRIER"; then
+    print_warning "$INTERFACE_NAME has NO-CARRIER — the link is up but not connected."
+    print_warning "On a VM, attach this NIC to the correct bridge/VLAN in the hypervisor."
+  fi
+fi
+
+# Current gateway on this interface (may be empty — that's fine for a secondary NIC)
+CURRENT_GATEWAY=$(ip route show default 2>/dev/null | grep "dev $INTERFACE_NAME" | awk '{print $3}' | head -n1)
+
+echo
+[ -n "$CURRENT_IP" ]      && echo "Current IP:      $CURRENT_IP"
+[ -n "$CURRENT_GATEWAY" ] && echo "Current Gateway: $CURRENT_GATEWAY"
+[ -n "$CURRENT_DNS" ]     && echo "Current DNS:     $CURRENT_DNS"
 echo
 
-# Fetch current Gateway using ip route
-CURRENT_GATEWAY=$(ip route show | grep "$INTERFACE_NAME" | grep default | awk '{print $3}')
+# Prompt for static IP (required if the interface has none)
+if [ -n "$CURRENT_IP" ]; then
+  read -p "Static IP [default: $CURRENT_IP]: " STATIC_IP
+  STATIC_IP="${STATIC_IP:-$CURRENT_IP}"
+else
+  read -p "Static IP (e.g. 192.168.4.8/24): " STATIC_IP
+fi
 
-# If no Gateway is found, exit
-if [ -z "$CURRENT_GATEWAY" ]; then
-  echo "Unable to fetch Gateway info. Exiting."
+if [ -z "$STATIC_IP" ]; then
+  print_error "No IP address provided. Exiting."
   exit 1
 fi
 
-echo "Current Gateway: $CURRENT_GATEWAY"
-echo
-
-# Prompt the user for custom values (defaults to current values)
-echo "Enter custom static IP (default: $CURRENT_IP):"
-read -p "Static IP: " STATIC_IP
-STATIC_IP="${STATIC_IP:-$CURRENT_IP}"
-
-# Ensure the IP has the CIDR notation
-if [[ ! "$STATIC_IP" =~ /.*/ ]]; then
+# Add /24 only when no CIDR suffix was given
+if [[ "$STATIC_IP" != */* ]]; then
   STATIC_IP="$STATIC_IP/24"
 fi
 
-echo "Enter custom Gateway (default: $CURRENT_GATEWAY):"
-read -p "Gateway: " STATIC_GATEWAY
-STATIC_GATEWAY="${STATIC_GATEWAY:-$CURRENT_GATEWAY}"
-
-echo "Enter custom DNS (default: $CURRENT_DNS):"
-read -p "DNS: " STATIC_DNS
-STATIC_DNS="${STATIC_DNS:-$CURRENT_DNS}"
-
-# Show the final selected configuration
+# Gateway is OPTIONAL — blank means no default route (correct for a secondary subnet NIC)
 echo
-echo "Applying the following static IP settings:"
-echo "Static IP: $STATIC_IP"
-echo "Gateway: $STATIC_GATEWAY"
-echo "DNS: $STATIC_DNS"
-echo
+print_info "Gateway is optional. Leave blank for a secondary interface (no default route)."
+if [ -n "$CURRENT_GATEWAY" ]; then
+  read -p "Gateway [default: $CURRENT_GATEWAY, '-' for none]: " STATIC_GATEWAY
+  STATIC_GATEWAY="${STATIC_GATEWAY:-$CURRENT_GATEWAY}"
+else
+  read -p "Gateway [blank for none]: " STATIC_GATEWAY
+fi
+[ "$STATIC_GATEWAY" == "-" ] && STATIC_GATEWAY=""
 
-# Apply configuration based on detected network system
+# DNS is OPTIONAL
+if [ -n "$CURRENT_DNS" ]; then
+  read -p "DNS [default: $CURRENT_DNS, '-' for none]: " STATIC_DNS
+  STATIC_DNS="${STATIC_DNS:-$CURRENT_DNS}"
+else
+  read -p "DNS [blank for none]: " STATIC_DNS
+fi
+[ "$STATIC_DNS" == "-" ] && STATIC_DNS=""
+
+echo
+print_info "Applying configuration:"
+echo "  Interface: $INTERFACE_NAME"
+echo "  Static IP: $STATIC_IP"
+echo "  Gateway:   ${STATIC_GATEWAY:-<none>}"
+echo "  DNS:       ${STATIC_DNS:-<none>}"
+echo
+read -p "Continue? (y/n): " CONFIRM
+if [[ "$CONFIRM" != "y" && "$CONFIRM" != "Y" ]]; then
+  print_warning "Cancelled by user."
+  exit 0
+fi
+
 if [ "$NETWORK_SYSTEM" == "networkmanager" ]; then
-  echo "Using NetworkManager (nmcli)..."
-  
-  # Fetch the active connection name using nmcli
-  CONNECTION_NAME=$(nmcli device show "$INTERFACE_NAME" | grep 'GENERAL.CONNECTION' | awk -F': ' '{print $2}' | sed 's/^[ \t]*//;s/[ \t]*$//')
-  
-  # Check if the connection name is valid and active
-  if [ -z "$CONNECTION_NAME" ]; then
-    echo "Error: No active connection found for interface $INTERFACE_NAME."
+  echo
+  print_info "Using NetworkManager (nmcli)..."
+
+  CONNECTION_NAME=$(nmcli -g GENERAL.CONNECTION device show "$INTERFACE_NAME" 2>/dev/null)
+
+  if [ -z "$CONNECTION_NAME" ] || [ "$CONNECTION_NAME" == "--" ]; then
+    # No existing connection (fresh DOWN NIC) — create one
+    CONNECTION_NAME="$INTERFACE_NAME"
+    print_info "No active connection — creating '$CONNECTION_NAME'..."
+    nmcli con add type ethernet ifname "$INTERFACE_NAME" con-name "$CONNECTION_NAME" \
+      ipv4.method manual ipv4.addresses "$STATIC_IP"
+  else
+    print_info "Modifying existing connection: $CONNECTION_NAME"
+    nmcli con mod "$CONNECTION_NAME" ipv4.method manual ipv4.addresses "$STATIC_IP"
+  fi
+
+  # Gateway / DNS only when provided
+  if [ -n "$STATIC_GATEWAY" ]; then
+    nmcli con mod "$CONNECTION_NAME" ipv4.gateway "$STATIC_GATEWAY"
+  else
+    nmcli con mod "$CONNECTION_NAME" ipv4.gateway ""
+  fi
+  if [ -n "$STATIC_DNS" ]; then
+    nmcli con mod "$CONNECTION_NAME" ipv4.dns "$STATIC_DNS"
+  else
+    nmcli con mod "$CONNECTION_NAME" ipv4.dns ""
+  fi
+
+  nmcli con down "$CONNECTION_NAME" 2>/dev/null
+  if nmcli con up "$CONNECTION_NAME"; then
+    print_info "Connection applied."
+  else
+    print_error "Failed to bring the connection up. Check: nmcli con show \"$CONNECTION_NAME\""
     exit 1
   fi
-  
-  echo "Applying settings to connection: $CONNECTION_NAME"
-  # Disable DHCP and apply static IP configuration using nmcli
-  sudo nmcli con mod "$CONNECTION_NAME" ipv4.addresses "$STATIC_IP" ipv4.gateway "$STATIC_GATEWAY" ipv4.dns "$STATIC_DNS" ipv4.method manual
-  
-  # Restart the connection to apply the changes
-  sudo nmcli con down "$CONNECTION_NAME" && sudo nmcli con up "$CONNECTION_NAME"
-  
+
 else
-  echo "Using Netplan (systemd-networkd)..."
-  
-  # Find or create netplan config file
-  NETPLAN_FILE="/etc/netplan/01-netcfg.yaml"
-  
-  # Backup existing netplan configs
-  sudo cp -r /etc/netplan /etc/netplan.backup.$(date +%Y%m%d_%H%M%S)
-  
-  # Create new netplan configuration
-  cat << EOF | sudo tee "$NETPLAN_FILE" > /dev/null
-network:
-  version: 2
-  renderer: networkd
-  ethernets:
-    $INTERFACE_NAME:
-      dhcp4: no
-      addresses:
-        - $STATIC_IP
-      routes:
-        - to: default
-          via: $STATIC_GATEWAY
-      nameservers:
-        addresses:
-          - $STATIC_DNS
-EOF
-  
-  echo "Created netplan configuration at $NETPLAN_FILE"
-  
-  # Test the configuration
-  echo "Testing netplan configuration..."
-  if sudo netplan try --timeout 10; then
-    echo "Configuration accepted and applied successfully!"
+  echo
+  print_info "Using Netplan (systemd-networkd)..."
+
+  # Write a DEDICATED per-interface file so other interfaces are never touched.
+  NETPLAN_FILE="/etc/netplan/90-${INTERFACE_NAME}.yaml"
+
+  # Warn if this interface is already defined elsewhere in /etc/netplan
+  OTHER_DEFS=$(grep -rl "^[[:space:]]*${INTERFACE_NAME}:" /etc/netplan/ 2>/dev/null | grep -v "^${NETPLAN_FILE}$")
+  if [ -n "$OTHER_DEFS" ]; then
+    print_warning "$INTERFACE_NAME is also defined in: $(echo "$OTHER_DEFS" | tr '\n' ' ')"
+    print_warning "The higher-numbered netplan file wins on conflicting keys."
+  fi
+
+  print_info "Backing up /etc/netplan..."
+  cp -r /etc/netplan "/etc/netplan.backup.$(date +%Y%m%d_%H%M%S)"
+
+  # Build the YAML (routes / nameservers included only if provided)
+  {
+    echo "network:"
+    echo "  version: 2"
+    echo "  renderer: networkd"
+    echo "  ethernets:"
+    echo "    ${INTERFACE_NAME}:"
+    echo "      dhcp4: no"
+    echo "      addresses:"
+    echo "        - $STATIC_IP"
+    if [ -n "$STATIC_GATEWAY" ]; then
+      echo "      routes:"
+      echo "        - to: default"
+      echo "          via: $STATIC_GATEWAY"
+    fi
+    if [ -n "$STATIC_DNS" ]; then
+      echo "      nameservers:"
+      echo "        addresses:"
+      echo "          - $STATIC_DNS"
+    fi
+  } > "$NETPLAN_FILE"
+
+  chmod 600 "$NETPLAN_FILE"
+  print_info "Wrote $NETPLAN_FILE (only $INTERFACE_NAME; other interfaces untouched)."
+
+  print_info "Testing configuration (netplan try, auto-reverts on failure)..."
+  if netplan try --timeout 20; then
+    print_info "Configuration accepted and applied."
   else
-    echo "Error: Netplan configuration test failed. Restoring backup..."
-    sudo rm "$NETPLAN_FILE"
+    print_error "netplan try failed — removing $NETPLAN_FILE and reverting."
+    rm -f "$NETPLAN_FILE"
+    netplan apply
     exit 1
   fi
 fi
 
 echo
-echo "Static IP configuration applied successfully for interface $INTERFACE_NAME!"
-echo "New IP: $STATIC_IP"
-echo "Gateway: $STATIC_GATEWAY"
-echo "DNS: $STATIC_DNS"
+print_info "======================================"
+print_info "Done. $INTERFACE_NAME configured:"
+echo "  IP:      $STATIC_IP"
+echo "  Gateway: ${STATIC_GATEWAY:-<none>}"
+echo "  DNS:     ${STATIC_DNS:-<none>}"
+echo
+echo "Verify: ip a show $INTERFACE_NAME ; ip route"
