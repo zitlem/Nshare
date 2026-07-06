@@ -466,15 +466,25 @@ function getProfile(req) {
     return null;
 }
 
-// The effective *folder* profile for a request. For switcher profiles this is
-// the folder the user has selected (?share=<name>, remembered in the session),
-// defaulting to the first allowed share.
+// The effective *folder* profile for a request. Logged-in admins may switch to
+// ANY folder profile (all sites) regardless of subnet; switcher profiles use
+// their `shares` allowlist; plain folder profiles are locked to themselves.
+// The selected folder is chosen via ?share=<name> and remembered in the session.
 function getEffectiveProfile(req) {
     const p = getProfile(req);
-    if (!p) return null;
-    if (isFolderProfile(p)) return p;
-    const targets = switcherShares(p);
-    if (targets.length === 0) return null;
+
+    // Determine which folders this request may switch between.
+    let targets;
+    if (isAdmin(req)) {
+        targets = config.profiles.filter(isFolderProfile).map(x => x.name);
+    } else if (p && !isFolderProfile(p)) {
+        targets = switcherShares(p);
+    } else {
+        // Non-admin on a plain folder profile (or nothing) — locked.
+        return p && isFolderProfile(p) ? p : null;
+    }
+    if (!targets || targets.length === 0) return null;
+
     const param = req.query && req.query.share;
     let active;
     if (param && targets.includes(param)) {
@@ -482,10 +492,12 @@ function getEffectiveProfile(req) {
         if (req.session) req.session.activeShare = param;
     } else if (req.session && targets.includes(req.session.activeShare)) {
         active = req.session.activeShare;
+    } else if (p && isFolderProfile(p) && targets.includes(p.name)) {
+        active = p.name; // default to the subnet's own folder
     } else {
         active = targets[0];
     }
-    return profileByName(active);
+    return profileByName(active) || null;
 }
 
 function getBaseDir(req) {
@@ -496,9 +508,9 @@ function getBaseDir(req) {
 // Deny access when no profile matches the client's subnet / tunnel share.
 const deniedIpsLogged = new Set();
 function requireProfile(req, res, next) {
-    const access = getProfile(req);          // matched profile (maybe a switcher)
+    const access = getProfile(req);          // matched profile (maybe a switcher, maybe null for an admin)
     const profile = getEffectiveProfile(req); // narrowed to a folder profile
-    if (!access || !profile) {
+    if (!profile) {
         const ip = clientIp(req);
         if (!deniedIpsLogged.has(ip)) {
             deniedIpsLogged.add(ip);
@@ -863,6 +875,12 @@ app.get('/', async (req, res) => {
     const profile = req.profile;
     const onTunnel = isTunnelRequest(req);
 
+    // Which sites this viewer may switch between: admins get all folder profiles;
+    // a switcher profile (e.g. management) gets its allowlist; others get none.
+    const switchNames = isAdmin(req)
+        ? config.profiles.filter(isFolderProfile).map(p => p.name)
+        : (req.accessProfile && !isFolderProfile(req.accessProfile) ? switcherShares(req.accessProfile) : []);
+
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.render('index', {
         items,
@@ -885,9 +903,8 @@ app.get('/', async (req, res) => {
         profile_name: profile.name,
         // Tunnel modal lists folder profiles only (switchers aren't tunnelable).
         profiles: config.profiles.filter(isFolderProfile).map(p => ({ name: p.name })),
-        // Folder switcher (only populated for switcher profiles like "management").
-        switch_shares: (req.accessProfile && !isFolderProfile(req.accessProfile))
-            ? switcherShares(req.accessProfile) : [],
+        // Folder switcher: admins get all sites; switcher profiles get their allowlist.
+        switch_shares: switchNames.length > 1 ? switchNames : [],
         active_share: profile.name,
         tunnel_hours: TUNNEL_HOURS
     });

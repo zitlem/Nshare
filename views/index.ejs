@@ -1054,7 +1054,7 @@
                     </button>
 
                     <% if (switch_shares && switch_shares.length) { %>
-                    <select class="btn btn-secondary" id="shareSwitcher" title="Current folder"
+                    <select class="btn btn-secondary" id="shareSwitcher" title="Site"
                             onchange="window.location='/?share=' + encodeURIComponent(this.value);">
                         <% switch_shares.forEach(function(s){ %>
                         <option value="<%= s %>" <%= s === active_share ? 'selected' : '' %>><%= s %></option>
