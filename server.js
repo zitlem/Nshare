@@ -508,6 +508,16 @@ function getBaseDir(req) {
     return profile ? getProfileDir(profile) : null;
 }
 
+// Folder profiles a request may act on (for public-link visibility/control):
+// admins → all sites; a switcher subnet → its shares; a plain subnet → its own.
+function accessibleFolderNames(req) {
+    if (isAdmin(req)) return config.profiles.filter(isFolderProfile).map(p => p.name);
+    const access = getProfile(req);
+    if (access && !isFolderProfile(access)) return switcherShares(access);
+    const eff = getEffectiveProfile(req);
+    return eff ? [eff.name] : [];
+}
+
 // Deny access when no profile matches the client's subnet / tunnel share.
 const deniedIpsLogged = new Set();
 function requireProfile(req, res, next) {
@@ -911,8 +921,11 @@ app.get('/', async (req, res) => {
         profile_name: profile.name,
         profile_label: profile.label || profile.name,
         home_label: profile.home_label || `Home of ${profile.label || profile.name}`,
-        // Tunnel modal lists folder profiles only (switchers aren't tunnelable).
-        profiles: config.profiles.filter(isFolderProfile).map(p => ({ name: p.name, label: p.label || p.name })),
+        // Tunnel modal lists only the sites this viewer may access (admins: all).
+        profiles: accessibleFolderNames(req).map(n => {
+            const fp = profileByName(n);
+            return { name: n, label: (fp && fp.label) || n };
+        }),
         // Folder switcher: admins get all sites; switcher profiles get their allowlist.
         switch_shares: switchNames.length > 1 ? switchNames : [],
         active_share: profile.name,
@@ -1031,14 +1044,22 @@ app.post('/upload', upload.array('files'), (req, res) => {
 });
 
 // ---- Cloudflare tunnel routes (one public link per profile) ----
+// Visibility/control is scoped to the sites the caller can access (admins: all).
 app.get('/tunnel/status', (req, res) => {
-    res.json(tunnelStatusAll());
+    const allowed = new Set(accessibleFolderNames(req));
+    const all = tunnelStatusAll();
+    const scoped = {};
+    for (const name of Object.keys(all)) if (allowed.has(name)) scoped[name] = all[name];
+    res.json(scoped);
 });
 
 app.post('/tunnel/start', (req, res) => {
     const name = (req.body && req.body.profile) || req.query.profile;
     if (!isFolderProfile(profileByName(name))) {
         return res.status(400).json({ error: 'Unknown profile' });
+    }
+    if (!accessibleFolderNames(req).includes(name)) {
+        return res.status(403).json({ error: 'Not permitted for your network' });
     }
     startTunnel(name);
     // URL + QR arrive asynchronously via the 'tunnel_updated' socket event
@@ -1049,6 +1070,9 @@ app.post('/tunnel/stop', (req, res) => {
     const name = (req.body && req.body.profile) || req.query.profile;
     if (!isFolderProfile(profileByName(name))) {
         return res.status(400).json({ error: 'Unknown profile' });
+    }
+    if (!accessibleFolderNames(req).includes(name)) {
+        return res.status(403).json({ error: 'Not permitted for your network' });
     }
     stopTunnel(name);
     res.json({ profile: name, active: false });
