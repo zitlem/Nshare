@@ -1154,6 +1154,24 @@
         .theme-toggle:hover, [data-theme="dark"] .theme-toggle:hover { background: var(--hover-color); transform: none; box-shadow: var(--shadow-sm); }
         #shareSwitcher { font-weight: 600; padding-right: 1.75rem; }
 
+        /* ---- Long-label safety (keep labels from breaking the layout) ---- */
+        #shareSwitcher { max-width: 11rem; }
+        .breadcrumb { min-width: 0; }
+        .breadcrumb a:first-child {
+            max-width: min(55vw, 22rem);
+            min-width: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .tunnel-row strong {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .t-badge { flex-shrink: 0; }
+
         /* ---- Panels / surfaces ---- */
         .breadcrumb-toolbar, [data-theme="dark"] .breadcrumb-toolbar {
             background: var(--bg-primary);
@@ -1310,40 +1328,35 @@
                     </select>
                     <% } %>
 
-                    <button class="btn btn-success" id="uploadBtn">
+                    <button class="btn btn-success" id="uploadBtn" title="Upload" aria-label="Upload">
                         <i class="fas fa-upload"></i>
-                        Upload
                     </button>
 
-                    <button class="btn btn-info" id="tunnelBtn" title="Share a public upload link (QR code)">
+                    <button class="btn btn-info" id="tunnelBtn" title="Share a public upload link (QR code)" aria-label="Share a public upload link (QR code)">
                         <i class="fas fa-qrcode"></i>
                     </button>
 
                     <% if (smb_url) { %>
-                    <a href="#" class="btn btn-info" onclick="openSmbShare(); return false;" style="flex-wrap:wrap; justify-content:center; text-align:center; line-height:1.2;">
-                        <span style="width:100%; display:flex; align-items:center; justify-content:center; gap:0.375rem;"><i class="fas fa-folder-open"></i> Open in File Browser</span>
+                    <a href="#" class="btn btn-info" onclick="openSmbShare(); return false;" title="Open in File Browser" style="flex-wrap:wrap; justify-content:center; text-align:center; line-height:1.2;">
+                        <span style="width:100%; display:flex; align-items:center; justify-content:center; gap:0.375rem;"><i class="fas fa-folder-open"></i> File Browser</span>
                         <% if (smb_button_text) { %><small style="width:100%; display:block;"><%= smb_button_text %></small><% } %>
                     </a>
                     <% } %>
                     <% if (is_admin) { %>
-                        <button class="btn btn-success" id="createFolderBtn">
+                        <button class="btn btn-success" id="createFolderBtn" title="New Folder" aria-label="New Folder">
                             <i class="fas fa-folder-plus"></i>
-                            New Folder
                         </button>
-                        
-                        <button class="btn btn-secondary" id="undoBtn">
+
+                        <button class="btn btn-secondary" id="undoBtn" title="Undo" aria-label="Undo">
                             <i class="fas fa-undo"></i>
-                            Undo
                         </button>
-                        
-                        <a href="<%= url_for('logout') %>" class="btn btn-secondary">
+
+                        <a href="<%= url_for('logout') %>" class="btn btn-secondary" title="Logout" aria-label="Logout">
                             <i class="fas fa-sign-out-alt"></i>
-                            Logout
                         </a>
                     <% } else { %>
-                        <a href="<%= url_for('login') %>" class="btn">
+                        <a href="<%= url_for('login') %>" class="btn" title="Admin Login" aria-label="Admin Login">
                             <i class="fas fa-sign-in-alt"></i>
-                            Admin Login
                         </a>
                     <% } %>
                 </div>
