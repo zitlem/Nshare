@@ -1572,7 +1572,7 @@
             <% profiles.forEach(function(p){ %>
             <div class="tunnel-row" data-profile="<%= p.name %>" style="border: 1px solid var(--border-color, #333); border-radius: 8px; padding: 0.75rem; margin-bottom: 0.75rem;">
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;">
-                    <strong style="text-transform: capitalize;"><i class="fas fa-folder"></i> <%= p.name %></strong>
+                    <strong><i class="fas fa-folder"></i> <%= p.label || p.name %></strong>
                     <span class="t-badge" style="font-size: 0.75rem; color: var(--text-secondary, #888);">off</span>
                 </div>
 
