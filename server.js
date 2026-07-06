@@ -79,11 +79,14 @@ function ensureProfiles(cfg) {
         const name = p.name || `profile${i + 1}`;
         const subnets = Array.isArray(p.subnets) ? p.subnets : (p.subnets ? [p.subnets] : []);
         if (Array.isArray(p.shares) && p.shares.length > 0) {
-            return { name, subnets, shares: p.shares.slice() };
+            return { name, subnets, label: p.label || name, shares: p.shares.slice() };
         }
+        const label = p.label || name;
         return {
             name,
             subnets,
+            label,                                          // friendly display name
+            home_label: p.home_label || `Home of ${label}`, // heading shown on the home page
             upload_directory: p.upload_directory || "./uploads",
             smb_url: p.smb_url || "",
             smb_button_text: p.smb_button_text || ""
@@ -877,9 +880,14 @@ app.get('/', async (req, res) => {
 
     // Which sites this viewer may switch between: admins get all folder profiles;
     // a switcher profile (e.g. management) gets its allowlist; others get none.
-    const switchNames = isAdmin(req)
+    const switchTargetNames = isAdmin(req)
         ? config.profiles.filter(isFolderProfile).map(p => p.name)
         : (req.accessProfile && !isFolderProfile(req.accessProfile) ? switcherShares(req.accessProfile) : []);
+    // Carry each option's friendly label for the dropdown.
+    const switchNames = switchTargetNames.map(n => {
+        const fp = profileByName(n);
+        return { name: n, label: (fp && fp.label) || n };
+    });
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.render('index', {
@@ -901,8 +909,10 @@ app.get('/', async (req, res) => {
         smb_url: onTunnel ? '' : (profile.smb_url || ''),
         smb_button_text: profile.smb_button_text || '',
         profile_name: profile.name,
+        profile_label: profile.label || profile.name,
+        home_label: profile.home_label || `Home of ${profile.label || profile.name}`,
         // Tunnel modal lists folder profiles only (switchers aren't tunnelable).
-        profiles: config.profiles.filter(isFolderProfile).map(p => ({ name: p.name })),
+        profiles: config.profiles.filter(isFolderProfile).map(p => ({ name: p.name, label: p.label || p.name })),
         // Folder switcher: admins get all sites; switcher profiles get their allowlist.
         switch_shares: switchNames.length > 1 ? switchNames : [],
         active_share: profile.name,

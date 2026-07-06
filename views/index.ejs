@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>File Server<% if (current_path) { %> - <%= current_path %><% } %></title>
+    <title><%= profile_label %><% if (current_path) { %> - <%= current_path %><% } %></title>
     
     <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
@@ -1029,7 +1029,7 @@
                 <div class="breadcrumb">
                     <a href="<%= url_for('index') %>">
                         <i class="fas fa-home"></i>
-                        Home
+                        <%= home_label %>
                     </a>
                     <% breadcrumbs.forEach(crumb => { %>
                         <span class="separator">/</span>
@@ -1057,7 +1057,7 @@
                     <select class="btn btn-secondary" id="shareSwitcher" title="Site"
                             onchange="window.location='/?share=' + encodeURIComponent(this.value);">
                         <% switch_shares.forEach(function(s){ %>
-                        <option value="<%= s %>" <%= s === active_share ? 'selected' : '' %>><%= s %></option>
+                        <option value="<%= s.name %>" <%= s.name === active_share ? 'selected' : '' %>><%= s.label %></option>
                         <% }); %>
                     </select>
                     <% } %>

@@ -11,6 +11,8 @@
   "profiles": [
     {
       "name": "shared",
+      "label": "Site A",
+      "home_label": "Home of Site A",
       "subnets": ["192.168.1.0/24"],
       "upload_directory": "./data/shared",
       "smb_url": "",
@@ -18,6 +20,8 @@
     },
     {
       "name": "school",
+      "label": "Site B",
+      "home_label": "Home of Site B",
       "subnets": ["192.168.10.0/24"],
       "upload_directory": "./data/school",
       "smb_url": "",
