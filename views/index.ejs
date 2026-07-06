@@ -577,15 +577,41 @@
         .progress-container {
             margin-top: 1rem;
             display: none;
+            max-height: 40vh;
+            overflow-y: auto;
         }
-        
+
+        .progress-item { margin-bottom: 0.6rem; }
+        .progress-item:last-child { margin-bottom: 0; }
+
+        .progress-item-head {
+            display: flex;
+            justify-content: space-between;
+            gap: 0.75rem;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.25rem;
+        }
+        .progress-item-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .progress-item-pct {
+            flex: none;
+            font-variant-numeric: tabular-nums;
+        }
+        .progress-item-done .progress-fill { background: var(--success-color); }
+        .progress-item-error .progress-fill { background: var(--danger-color); }
+        .progress-item-error .progress-item-pct { color: var(--danger-color); }
+
         .progress-bar {
             background: var(--bg-tertiary);
             border-radius: 0.5rem;
             height: 1rem;
             overflow: hidden;
         }
-        
+
         .progress-fill {
             background: var(--accent-color);
             height: 100%;
@@ -593,13 +619,6 @@
             transform: scaleX(0);
             transform-origin: left;
             transition: transform 0.3s;
-        }
-        
-        .progress-text {
-            text-align: center;
-            margin-top: 0.5rem;
-            font-size: 0.875rem;
-            color: var(--text-secondary);
         }
         
         .download-queue {
@@ -1407,12 +1426,8 @@
         <!-- Hidden File Input -->
         <input type="file" id="fileInput" multiple style="display: none;">
         
-        <div class="progress-container" id="progressContainer">
-            <div class="progress-bar">
-                <div class="progress-fill" id="progressFill"></div>
-            </div>
-            <div class="progress-text" id="progressText">Uploading...</div>
-        </div>
+        <!-- One progress row per uploading file is injected here at runtime. -->
+        <div class="progress-container" id="progressContainer" aria-live="polite"></div>
 
         <!-- File List -->
         <div class="file-list">
@@ -1916,61 +1931,111 @@
             uploadFiles(files);
         }
         
-        // Number of upload batches currently in flight. The progress bar is
-        // shared, so we only hide it once every concurrent upload has finished.
+        // Number of upload rows currently in flight (across all batches). The
+        // progress list is hidden again only once every row has finished.
         let activeUploads = 0;
 
+        // Upload each selected file as its own request so every file gets its
+        // own progress bar. Multiple files (or overlapping batches) stack as
+        // separate rows in #progressContainer.
         function uploadFiles(files) {
             if (files.length === 0) return;
 
-            const formData = new FormData();
-            files.forEach(file => formData.append('files', file));
-            formData.append('path', currentPath);
+            const total = files.length;
+            let done = 0, ok = 0;
 
-            const progressContainer = document.getElementById('progressContainer');
-            const progressFill = document.getElementById('progressFill');
-            const progressText = document.getElementById('progressText');
+            files.forEach(file => uploadOneFile(file, (success, msg) => {
+                done++;
+                if (success) { ok++; } else { showAlert(`${file.name}: ${msg || 'upload failed'}`, 'error'); }
+                if (done === total && ok === total) {
+                    showAlert(total === 1 ? 'File uploaded successfully!' : `${total} files uploaded successfully!`, 'success');
+                }
+            }));
+        }
+
+        // Upload a single file, rendering and driving its own progress row.
+        // Calls done(success, errorMessage) when the request settles.
+        function uploadOneFile(file, done) {
+            const container = document.getElementById('progressContainer');
+            container.style.display = 'block';
+
+            // Build the progress row.
+            const item = document.createElement('div');
+            item.className = 'progress-item';
+            const head = document.createElement('div');
+            head.className = 'progress-item-head';
+            const name = document.createElement('span');
+            name.className = 'progress-item-name';
+            name.textContent = file.name;
+            name.title = file.name;
+            const pct = document.createElement('span');
+            pct.className = 'progress-item-pct';
+            pct.textContent = '0%';
+            head.appendChild(name);
+            head.appendChild(pct);
+            const bar = document.createElement('div');
+            bar.className = 'progress-bar';
+            const fill = document.createElement('div');
+            fill.className = 'progress-fill';
+            fill.setAttribute('role', 'progressbar');
+            fill.setAttribute('aria-valuemin', '0');
+            fill.setAttribute('aria-valuemax', '100');
+            fill.setAttribute('aria-valuenow', '0');
+            fill.setAttribute('aria-label', 'Uploading ' + file.name);
+            bar.appendChild(fill);
+            item.appendChild(head);
+            item.appendChild(bar);
+            container.appendChild(item);
 
             activeUploads++;
-            progressContainer.style.display = 'block';
-            progressFill.style.transform = 'scaleX(0)';
-            progressText.textContent = 'Uploading...';
 
-            function finishUpload() {
+            function settle(success, msg) {
                 activeUploads--;
-                if (activeUploads <= 0) {
-                    activeUploads = 0;
-                    progressContainer.style.display = 'none';
+                item.classList.add(success ? 'progress-item-done' : 'progress-item-error');
+                if (success) {
+                    fill.style.transform = 'scaleX(1)';
+                    fill.setAttribute('aria-valuenow', '100');
+                    pct.textContent = 'Done';
+                } else {
+                    pct.textContent = 'Failed';
                 }
+                // Remove the finished row shortly after; hide the list once empty.
+                setTimeout(() => {
+                    item.remove();
+                    if (activeUploads <= 0 && container.children.length === 0) {
+                        container.style.display = 'none';
+                    }
+                }, success ? 1200 : 4000);
+                done(success, msg);
             }
+
+            const formData = new FormData();
+            formData.append('files', file);
+            formData.append('path', currentPath);
 
             const xhr = new XMLHttpRequest();
 
             xhr.upload.addEventListener('progress', (e) => {
                 if (e.lengthComputable) {
-                    const percentComplete = (e.loaded / e.total) * 100;
-                    progressFill.style.transform = 'scaleX(' + (percentComplete / 100) + ')';
-                    progressText.textContent = `Uploading... ${Math.round(percentComplete)}%`;
+                    const p = Math.round((e.loaded / e.total) * 100);
+                    fill.style.transform = 'scaleX(' + (p / 100) + ')';
+                    fill.setAttribute('aria-valuenow', String(p));
+                    pct.textContent = p + '%';
                 }
             });
 
             xhr.addEventListener('load', () => {
-                finishUpload();
-
                 if (xhr.status === 200) {
-                    const response = JSON.parse(xhr.responseText);
-                    showAlert('Files uploaded successfully!', 'success');
+                    settle(true);
                     // File list will be updated via socket
                 } else {
-                    const error = JSON.parse(xhr.responseText);
-                    showAlert(error.error || 'Upload failed', 'error');
+                    let msg = 'Upload failed';
+                    try { msg = JSON.parse(xhr.responseText).error || msg; } catch (e) { /* non-JSON */ }
+                    settle(false, msg);
                 }
             });
 
-            xhr.addEventListener('error', () => {
-                finishUpload();
-                showAlert('Upload failed', 'error');
-            });
+            xhr.addEventListener('error', () => settle(false, 'Upload failed'));
 
             xhr.open('POST', '/upload');
             xhr.send(formData);
