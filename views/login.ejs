@@ -234,12 +234,88 @@
                 padding: 2rem;
                 margin: 1rem;
             }
-            
+
             .theme-toggle {
                 top: 1rem;
                 right: 1rem;
             }
         }
+
+        /* ============ Visual refresh — Flat design (matches app) ============ */
+        :root {
+            --bg-app: #eef2f7;
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8fafc;
+            --bg-tertiary: #eef2f7;
+            --text-primary: #0f172a;
+            --text-secondary: #64748b;
+            --border-color: #e2e8f0;
+            --hover-color: #f1f5f9;
+            --accent-color: #2563eb;
+            --accent-hover: #1d4ed8;
+            --success-color: #16a34a;
+            --danger-color: #dc2626;
+            --radius-sm: 0.5rem;
+            --radius-lg: 0.875rem;
+            --ring: 0 0 0 3px rgba(37, 99, 235, 0.35);
+            --shadow-lg: 0 18px 45px rgba(15, 23, 42, 0.20);
+        }
+        [data-theme="dark"] {
+            --bg-app: #0b1120;
+            --bg-primary: #131c2e;
+            --bg-secondary: #0f1626;
+            --bg-tertiary: #1e293b;
+            --text-primary: #e8edf5;
+            --text-secondary: #94a3b8;
+            --border-color: #263244;
+            --hover-color: #1c2740;
+            --accent-color: #3b82f6;
+            --accent-hover: #60a5fa;
+            --ring: 0 0 0 3px rgba(59, 130, 246, 0.45);
+            --shadow-lg: 0 22px 55px rgba(0, 0, 0, 0.6);
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            background: radial-gradient(1100px 560px at 50% -12%, var(--accent-color), transparent 62%), var(--bg-app);
+        }
+        [data-theme="dark"] body { background: radial-gradient(1100px 560px at 50% -12%, rgba(59,130,246,0.28), transparent 62%), var(--bg-app); }
+
+        .login-container {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
+        }
+        .login-icon { border-radius: var(--radius-lg); box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35); }
+        .login-title { letter-spacing: -0.02em; }
+
+        .form-control {
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            background: var(--bg-secondary);
+        }
+        .form-control:focus { border-color: var(--accent-color); box-shadow: var(--ring); }
+
+        .btn { border-radius: var(--radius-sm); font-weight: 600; box-shadow: 0 1px 2px rgba(15,23,42,0.08); }
+        .btn:hover { background: var(--accent-hover); transform: none; }
+        .btn-secondary { background: var(--bg-secondary); border: 1px solid var(--border-color); }
+        .btn-secondary:hover { background: var(--hover-color); }
+
+        .alert-error { background: var(--bg-primary); border-color: var(--danger-color); color: var(--danger-color); }
+        .alert-success { background: var(--bg-primary); border-color: var(--success-color); color: var(--success-color); }
+        .alert-info { background: var(--bg-primary); border-color: var(--accent-color); color: var(--accent-color); }
+
+        .theme-toggle {
+            background: rgba(255, 255, 255, 0.16);
+            border: 1px solid rgba(255, 255, 255, 0.28);
+            border-radius: var(--radius-sm);
+        }
+        .theme-toggle:hover { background: rgba(255, 255, 255, 0.28); transform: none; }
+
+        a:focus-visible, button:focus-visible, input:focus-visible { outline: none; box-shadow: var(--ring); border-radius: var(--radius-sm); }
+        @media (prefers-reduced-motion: reduce) { * { transition-duration: 0.001ms !important; } }
     </style>
 </head>
 <body>

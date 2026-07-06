@@ -1018,6 +1018,254 @@
             }
         }
     </style>
+
+    <!-- ===================================================================
+         Visual refresh — Flat design system (overrides the styles above).
+         Token-driven, light + dark, WCAG-minded. Kept offline/self-contained.
+         =================================================================== -->
+    <style>
+        :root {
+            --bg-app: #eef2f7;
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8fafc;
+            --bg-tertiary: #eef2f7;
+            --text-primary: #0f172a;
+            --text-secondary: #64748b;
+            --border-color: #e2e8f0;
+            --hover-color: #f1f5f9;
+            --accent-color: #2563eb;
+            --accent-hover: #1d4ed8;
+            --accent-soft: rgba(37, 99, 235, 0.10);
+            --success-color: #16a34a;
+            --success-hover: #15803d;
+            --warning-color: #d97706;
+            --danger-color: #dc2626;
+            --danger-hover: #b91c1c;
+            --ring: 0 0 0 3px rgba(37, 99, 235, 0.35);
+            --radius-sm: 0.5rem;
+            --radius: 0.625rem;
+            --radius-lg: 0.875rem;
+            --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+            --shadow: 0 1px 3px rgba(15, 23, 42, 0.10), 0 1px 2px rgba(15, 23, 42, 0.06);
+            --shadow-lg: 0 18px 45px rgba(15, 23, 42, 0.20);
+            --icon-folder: #2563eb;
+            --icon-image: #16a34a;
+            --icon-video: #e11d48;
+            --icon-audio: #7c3aed;
+            --icon-doc: #d97706;
+        }
+
+        [data-theme="dark"] {
+            --bg-app: #0b1120;
+            --bg-primary: #131c2e;
+            --bg-secondary: #0f1626;
+            --bg-tertiary: #1e293b;
+            --text-primary: #e8edf5;
+            --text-secondary: #94a3b8;
+            --border-color: #263244;
+            --hover-color: #1c2740;
+            --accent-color: #3b82f6;
+            --accent-hover: #60a5fa;
+            --accent-soft: rgba(59, 130, 246, 0.16);
+            --success-color: #22c55e;
+            --success-hover: #16a34a;
+            --warning-color: #f59e0b;
+            --danger-color: #ef4444;
+            --danger-hover: #dc2626;
+            --ring: 0 0 0 3px rgba(59, 130, 246, 0.45);
+            --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+            --shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+            --shadow-lg: 0 22px 55px rgba(0, 0, 0, 0.6);
+            --icon-folder: #60a5fa;
+            --icon-image: #4ade80;
+            --icon-video: #fb7185;
+            --icon-audio: #a78bfa;
+            --icon-doc: #fbbf24;
+        }
+
+        body,
+        [data-theme="dark"] body {
+            background: var(--bg-app);
+            animation: none;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            -webkit-font-smoothing: antialiased;
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .main-content { max-width: 960px; }
+
+        /* ---- Focus visibility (a11y) ---- */
+        a:focus-visible, button:focus-visible, select:focus-visible,
+        input:focus-visible, textarea:focus-visible, [tabindex]:focus-visible {
+            outline: none;
+            box-shadow: var(--ring);
+            border-radius: var(--radius-sm);
+        }
+
+        /* ---- Buttons: flat, solid, no blur ---- */
+        .btn {
+            background: var(--accent-color);
+            color: #fff;
+            border: 1px solid transparent;
+            border-radius: var(--radius-sm);
+            padding: 0.44rem 0.85rem;
+            font-weight: 600;
+            font-size: 0.8125rem;
+            backdrop-filter: none;
+            box-shadow: var(--shadow-sm);
+            transition: background-color 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
+        }
+        .btn:hover { background: var(--accent-hover); transform: none; box-shadow: var(--shadow); }
+        .btn:active { transform: translateY(0.5px); }
+
+        .btn-secondary, [data-theme="dark"] .btn-secondary {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            backdrop-filter: none;
+        }
+        .btn-secondary:hover, [data-theme="dark"] .btn-secondary:hover { background: var(--hover-color); }
+
+        .btn-success { background: var(--success-color); border-color: transparent; backdrop-filter: none; }
+        .btn-success:hover { background: var(--success-hover); }
+
+        .btn-danger { background: var(--danger-color); border-color: transparent; }
+        .btn-danger:hover { background: var(--danger-hover); }
+
+        .btn-info {
+            background: var(--accent-soft);
+            color: var(--accent-color);
+            border: 1px solid var(--border-color);
+            backdrop-filter: none;
+            box-shadow: none;
+        }
+        .btn-info:hover { background: var(--accent-soft); border-color: var(--accent-color); box-shadow: var(--shadow-sm); }
+
+        /* ---- Theme toggle & site switcher ---- */
+        .theme-toggle, [data-theme="dark"] .theme-toggle,
+        #shareSwitcher, .sort-controls select, [data-theme="dark"] .sort-controls select {
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            backdrop-filter: none;
+            font-weight: 500;
+        }
+        .theme-toggle:hover, [data-theme="dark"] .theme-toggle:hover { background: var(--hover-color); transform: none; box-shadow: var(--shadow-sm); }
+        #shareSwitcher { font-weight: 600; padding-right: 1.75rem; }
+
+        /* ---- Panels / surfaces ---- */
+        .breadcrumb-toolbar, [data-theme="dark"] .breadcrumb-toolbar {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-sm);
+            backdrop-filter: none;
+            padding: 0.6rem 0.85rem;
+        }
+        .breadcrumb a { color: var(--accent-color); font-weight: 500; }
+        .breadcrumb a:hover, [data-theme="dark"] .breadcrumb a:hover { background: var(--accent-soft); backdrop-filter: none; }
+        .breadcrumb a:first-child { font-weight: 700; color: var(--text-primary); }
+        .breadcrumb a:first-child i { color: var(--accent-color); }
+
+        .file-list, [data-theme="dark"] .file-list {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-sm);
+            backdrop-filter: none;
+        }
+        .file-item { border-bottom: 1px solid var(--border-color); align-items: center; }
+        .file-list .file-item:last-child { border-bottom: none; }
+        .file-item:hover, [data-theme="dark"] .file-item:hover { background: var(--hover-color); backdrop-filter: none; }
+        .file-icon.folder { color: var(--icon-folder); }
+        .file-icon.image { color: var(--icon-image); }
+        .file-icon.video { color: var(--icon-video); }
+        .file-icon.audio { color: var(--icon-audio); }
+        .file-icon.document { color: var(--icon-doc); }
+        .file-name { font-weight: 600; }
+        .file-size, .file-date { font-variant-numeric: tabular-nums; }
+
+        .action-btn:hover, [data-theme="dark"] .action-btn:hover {
+            background: var(--hover-color); backdrop-filter: none; color: var(--accent-color);
+        }
+
+        /* ---- Search ---- */
+        .search-box, [data-theme="dark"] .search-box {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            backdrop-filter: none;
+        }
+        .search-box:focus-within { border-color: var(--accent-color); box-shadow: var(--ring); }
+        .search-box i { color: var(--text-secondary); }
+        .search-box input, [data-theme="dark"] .search-box input { background: transparent; backdrop-filter: none; }
+
+        /* ---- Inputs ---- */
+        .form-control, [data-theme="dark"] .form-control {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            backdrop-filter: none;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        .form-control:focus { outline: none; border-color: var(--accent-color); box-shadow: var(--ring); }
+
+        /* ---- Modals ---- */
+        .modal { background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(3px); }
+        .modal-content, [data-theme="dark"] .modal-content {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
+            backdrop-filter: none;
+        }
+        .modal-header { border-bottom: 1px solid var(--border-color); padding-bottom: 0.9rem; }
+        .modal-title { letter-spacing: -0.01em; }
+        .close-btn { border-radius: var(--radius-sm); width: 2rem; height: 2rem; line-height: 1; transition: background-color 0.15s ease; }
+        .close-btn:hover { background: var(--hover-color); color: var(--text-primary); }
+
+        /* ---- Context menu ---- */
+        .context-menu { border-radius: var(--radius); box-shadow: var(--shadow-lg); overflow: hidden; }
+        .context-menu-item:hover, [data-theme="dark"] .context-menu-item:hover { background: var(--hover-color); backdrop-filter: none; }
+        .context-menu-item.danger:hover { background: var(--danger-color); }
+
+        /* ---- Shared text ---- */
+        .shared-text-area, [data-theme="dark"] .shared-text-area {
+            background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: var(--radius); backdrop-filter: none;
+        }
+        .shared-text-header, [data-theme="dark"] .shared-text-header { background: var(--bg-secondary); border-bottom: 1px solid var(--border-color); backdrop-filter: none; }
+        .shared-text-content, [data-theme="dark"] .shared-text-content { background: transparent; backdrop-filter: none; }
+        .format-btn, [data-theme="dark"] .format-btn {
+            background: var(--bg-secondary); border: 1px solid var(--border-color); color: var(--text-primary); backdrop-filter: none;
+        }
+        .format-btn:hover, [data-theme="dark"] .format-btn:hover { background: var(--hover-color); transform: none; }
+
+        /* ---- Progress ---- */
+        .progress-bar { background: var(--bg-tertiary); border-radius: 999px; }
+        .progress-fill { background: var(--accent-color); border-radius: 999px; }
+
+        /* ---- Alerts (accessible tinted) ---- */
+        .alert { border-radius: var(--radius-sm); box-shadow: var(--shadow); }
+        .alert-success { background: var(--bg-primary); border-color: var(--success-color); color: var(--success-color); }
+        .alert-error { background: var(--bg-primary); border-color: var(--danger-color); color: var(--danger-color); }
+        .alert-info { background: var(--bg-primary); border-color: var(--accent-color); color: var(--accent-color); }
+
+        /* ---- Tunnel modal rows ---- */
+        .tunnel-row { border: 1px solid var(--border-color) !important; border-radius: var(--radius) !important; background: var(--bg-secondary); }
+        .t-badge { padding: 0.1rem 0.5rem; border-radius: 999px; background: var(--bg-tertiary); font-weight: 600; }
+
+        /* ---- Download queue ---- */
+        .download-queue { border-radius: var(--radius); box-shadow: var(--shadow-lg); }
+
+        /* ---- Drag overlay ---- */
+        body.dragover::before { background: var(--accent-soft); color: var(--accent-color); backdrop-filter: blur(2px); }
+
+        /* ---- Reduced motion ---- */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; }
+        }
+    </style>
 </head>
 <body>
 
