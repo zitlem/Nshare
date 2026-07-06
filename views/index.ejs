@@ -1916,23 +1916,36 @@
             uploadFiles(files);
         }
         
+        // Number of upload batches currently in flight. The progress bar is
+        // shared, so we only hide it once every concurrent upload has finished.
+        let activeUploads = 0;
+
         function uploadFiles(files) {
             if (files.length === 0) return;
-            
+
             const formData = new FormData();
             files.forEach(file => formData.append('files', file));
             formData.append('path', currentPath);
-            
+
             const progressContainer = document.getElementById('progressContainer');
             const progressFill = document.getElementById('progressFill');
             const progressText = document.getElementById('progressText');
-            
+
+            activeUploads++;
             progressContainer.style.display = 'block';
             progressFill.style.transform = 'scaleX(0)';
             progressText.textContent = 'Uploading...';
-            
+
+            function finishUpload() {
+                activeUploads--;
+                if (activeUploads <= 0) {
+                    activeUploads = 0;
+                    progressContainer.style.display = 'none';
+                }
+            }
+
             const xhr = new XMLHttpRequest();
-            
+
             xhr.upload.addEventListener('progress', (e) => {
                 if (e.lengthComputable) {
                     const percentComplete = (e.loaded / e.total) * 100;
@@ -1940,10 +1953,10 @@
                     progressText.textContent = `Uploading... ${Math.round(percentComplete)}%`;
                 }
             });
-            
+
             xhr.addEventListener('load', () => {
-                progressContainer.style.display = 'none';
-                
+                finishUpload();
+
                 if (xhr.status === 200) {
                     const response = JSON.parse(xhr.responseText);
                     showAlert('Files uploaded successfully!', 'success');
@@ -1953,12 +1966,12 @@
                     showAlert(error.error || 'Upload failed', 'error');
                 }
             });
-            
+
             xhr.addEventListener('error', () => {
-                progressContainer.style.display = 'none';
+                finishUpload();
                 showAlert('Upload failed', 'error');
             });
-            
+
             xhr.open('POST', '/upload');
             xhr.send(formData);
         }

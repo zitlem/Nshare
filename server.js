@@ -633,7 +633,10 @@ const storage = multer.diskStorage({
     filename: (req, file, cb) => {
         // Properly decode UTF-8 filename
         const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
-        cb(null, Date.now() + '-' + originalName);
+        // Random token keeps temp names unique so concurrent uploads of the
+        // same filename (one batch, or multiple users) can't clobber each other.
+        const token = crypto.randomBytes(8).toString('hex');
+        cb(null, `${Date.now()}-${token}-${originalName}`);
     }
 });
 
