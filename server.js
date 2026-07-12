@@ -648,18 +648,23 @@ const upload = multer({
 });
 
 // Utility functions
-function getFileSize(filePath) {
+
+// Recursively total a file/directory's size. Directory listings live over NFS,
+// so this is async: a sync recursive walk blocks Node's single event loop and
+// freezes every client when the NAS is slow. Pass the caller's already-fetched
+// stats to avoid a redundant stat round-trip.
+async function getFileSizeAsync(filePath, knownStats) {
     try {
-        const stats = fs.statSync(filePath);
+        const stats = knownStats || await fs.promises.stat(filePath);
         if (stats.isFile()) {
             return stats.size;
         } else if (stats.isDirectory()) {
             let totalSize = 0;
-            const files = fs.readdirSync(filePath);
-            for (const file of files) {
-                const subPath = path.join(filePath, file);
+            const entries = await fs.promises.readdir(filePath, { withFileTypes: true });
+            for (const entry of entries) {
+                const subPath = path.join(filePath, entry.name);
                 try {
-                    totalSize += getFileSize(subPath);
+                    totalSize += await getFileSizeAsync(subPath);
                 } catch (e) {
                     // Skip files that can't be read
                 }
@@ -834,7 +839,9 @@ app.get('/', async (req, res) => {
                 const stats = await fs.promises.stat(itemPath);
                 if (isHidden(item, stats)) continue;
                 const isDir = stats.isDirectory();
-                const size = getFileSize(itemPath);
+                // Files: reuse the stats we already have. Directories: size async
+                // so a slow NFS walk never blocks the event loop (and all clients).
+                const size = isDir ? await getFileSizeAsync(itemPath, stats) : stats.size;
                 const modified = stats.mtime;
                 
                 items.push({
@@ -1081,36 +1088,46 @@ app.post('/tunnel/stop', (req, res) => {
     res.json({ profile: name, active: false });
 });
 
-app.get('/download', apiProtection, (req, res) => {
+app.get('/download', apiProtection, async (req, res) => {
     const filePath = req.query.path || '';
-    
+
     // Security check
     const fullPath = safeJoin(getProfileDir(req.profile), filePath);
     if (!isSafePath(fullPath, getProfileDir(req.profile))) {
         return res.status(400).json({ error: 'Invalid path' });
     }
-    
-    if (!fs.existsSync(fullPath)) {
+
+    // Async stat (path is on NFS) so a slow mount doesn't block the event loop.
+    let stats;
+    try {
+        stats = await fs.promises.stat(fullPath);
+    } catch {
         return res.status(404).json({ error: 'File not found' });
     }
-    
-    if (fs.statSync(fullPath).isFile()) {
+
+    if (stats.isFile()) {
         res.download(fullPath);
     } else {
         res.status(400).json({ error: 'Path is not a file' });
     }
 });
 
-app.get('/download_folder', (req, res) => {
+app.get('/download_folder', async (req, res) => {
     const folderPath = req.query.path || '';
-    
+
     // Security check
     const fullPath = safeJoin(getProfileDir(req.profile), folderPath);
     if (!isSafePath(fullPath, getProfileDir(req.profile))) {
         return res.status(400).json({ error: 'Invalid path' });
     }
-    
-    if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isDirectory()) {
+
+    let stats;
+    try {
+        stats = await fs.promises.stat(fullPath);
+    } catch {
+        return res.status(404).json({ error: 'Folder not found' });
+    }
+    if (!stats.isDirectory()) {
         return res.status(404).json({ error: 'Folder not found' });
     }
     
@@ -1318,27 +1335,34 @@ app.post('/undo', adminRequired, (req, res) => {
     }
 });
 
-app.get('/preview', apiProtection, (req, res) => {
+app.get('/preview', apiProtection, async (req, res) => {
     const filePath = req.query.path || '';
-    
+
     // Security check
     const fullPath = safeJoin(getProfileDir(req.profile), filePath);
     if (!isSafePath(fullPath, getProfileDir(req.profile))) {
         return res.status(400).json({ error: 'Invalid path' });
     }
-    
-    if (!fs.existsSync(fullPath) || !fs.statSync(fullPath).isFile()) {
+
+    // Async stat/read (path is on NFS) so a slow mount doesn't block the loop.
+    try {
+        const stats = await fs.promises.stat(fullPath);
+        if (!stats.isFile()) {
+            return res.status(404).json({ error: 'File not found' });
+        }
+    } catch {
         return res.status(404).json({ error: 'File not found' });
     }
-    
+
     try {
         // Check if file is text
         const mimeType = mime.lookup(fullPath);
         if (mimeType && !mimeType.startsWith('text/')) {
             return res.status(400).json({ error: 'File is not a text file' });
         }
-        
-        const content = fs.readFileSync(fullPath, 'utf-8').substring(0, 10000); // Limit to first 10KB
+
+        const data = await fs.promises.readFile(fullPath, 'utf-8');
+        const content = data.substring(0, 10000); // Limit to first 10KB
         res.json({ success: true, content });
     } catch (e) {
         res.status(500).json({ error: `Failed to read file: ${e.message}` });
@@ -1381,7 +1405,9 @@ app.get('/api/files', async (req, res) => {
                 const stats = await fs.promises.stat(itemPath);
                 if (isHidden(item, stats)) continue;
                 const isDir = stats.isDirectory();
-                const size = getFileSize(itemPath);
+                // Files: reuse the stats we already have. Directories: size async
+                // so a slow NFS walk never blocks the event loop (and all clients).
+                const size = isDir ? await getFileSizeAsync(itemPath, stats) : stats.size;
                 const modified = stats.mtime;
 
                 items.push({
@@ -1512,8 +1538,15 @@ for (const profile of config.profiles) {
 
 // Poll for NFS changes not detected by inotify, per profile folder.
 // Keys are "<profile>|<absolute dir>" so profiles never collide.
+//
+// This walks the whole tree over NFS, so it MUST be async: a synchronous walk
+// blocks Node's single event loop, and when the NAS stalls (soft mount, ~6-9s)
+// the entire server stops answering every client at once. Using fs.promises
+// lets a slow NFS call yield instead of freezing everything.
 let lastMtimes = new Map();
-function pollForChanges() {
+const POLL_INTERVAL_MS = 5000;
+let pollInProgress = false;
+async function pollForChanges() {
     const newMtimes = new Map();
     for (const profile of config.profiles) {
         if (!isFolderProfile(profile)) continue;
@@ -1523,8 +1556,8 @@ function pollForChanges() {
             const dirs = [baseDir];
             while (dirs.length) {
                 const dir = dirs.pop();
-                const entries = fs.readdirSync(dir, { withFileTypes: true });
-                const stat = fs.statSync(dir);
+                const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+                const stat = await fs.promises.stat(dir);
                 const rel = path.relative(baseDir, dir).replace(/\\/g, '/');
                 const key = profile.name + '|' + dir;
                 newMtimes.set(key, stat.mtimeMs);
@@ -1541,8 +1574,20 @@ function pollForChanges() {
     }
     lastMtimes = newMtimes;
 }
-pollForChanges(); // initial snapshot
-setInterval(pollForChanges, 5000);
+
+// Run polls one-at-a-time: if a walk is still running when the timer fires
+// (slow NAS), skip that tick instead of stacking overlapping walks.
+async function pollTick() {
+    if (pollInProgress) return;
+    pollInProgress = true;
+    try {
+        await pollForChanges();
+    } finally {
+        pollInProgress = false;
+    }
+}
+pollTick(); // initial snapshot
+setInterval(pollTick, POLL_INTERVAL_MS);
 
 // Start server
 server.listen(PORT, '0.0.0.0', () => {
